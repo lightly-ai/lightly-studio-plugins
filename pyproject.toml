@@ -4,13 +4,11 @@ version = "0.1.0"
 description = "All Lightly Studio plugins"
 requires-python = ">=3.8"
 dependencies = [
+"lightly-plugins-bbox_auto_propagation",
 ]
 
 [tool.uv.sources]
+lightly-plugins-bbox_auto_propagation = { workspace = true }
 
 [tool.uv.workspace]
 members = ["plugins/*"]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
