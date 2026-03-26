@@ -1,0 +1,7 @@
+[[plugins]]
+id = "lightly-plugins-bbox"
+name = "BBox Propagation"
+description = "xyz"
+source = "local:plugins/bbox-propagation"
+maintainer = "lightly"
+tags = ["auto-labeling", "tracking"]
