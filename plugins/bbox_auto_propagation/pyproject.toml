@@ -1,5 +1,5 @@
 [project]
-name = "lightly-plugins-bbox_auto_propagation"
+name = "lightly_plugins_bbox_auto_propagation"
 version = "0.1.0"
 description = "BBox auto propagation"
 requires-python = ">=3.8"

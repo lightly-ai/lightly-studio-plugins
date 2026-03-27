@@ -4,7 +4,7 @@ A collection of plugins for [Lightly Studio](https://github.com/lightly-ai/light
 
 | Plugin | Description | Maintainer | Install |
 |---|---|---|---|
-
+| [BBox auto propagation](plugins/bbox_auto_propagation/)|Auto bbox propagation|Lightly| `pip install -e plugins/bbox_auto_propagation`|
 
 ## Adding a New Plugin
 
@@ -23,4 +23,6 @@ A collection of plugins for [Lightly Studio](https://github.com/lightly-ai/light
    my_plugin = "lightly_plugins_my_plugin.operator:MyPluginOperator"
    ```
 
-3. Install: `pip install -e plugins/my-plugin`
+3. Update Readme.md and plugins.toml.
+
+4. Install: `pip install -e plugins/my-plugin`
