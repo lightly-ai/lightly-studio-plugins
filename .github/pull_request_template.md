@@ -9,4 +9,4 @@
 ## Did you update [Readme.md](../README.md) and [plugins.toml](../plugins.toml)?
 
 - [ ] Yes
-- [ ] Not needed (internal change)
+- [ ] Not needed
