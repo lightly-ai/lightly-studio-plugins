@@ -1,0 +1,15 @@
+[project]
+name = "lightly_plugins_bbox_auto_propagation_nano_tracker"
+version = "0.1.0"
+description = "BBox auto propagation using nano tracker"
+requires-python = ">=3.9"
+
+[project.entry-points."lightly_studio.plugins"]
+bbox_auto_propagation_nano_tracker = "lightly_plugins_bbox_auto_propagation_nano_tracker.operator:AutoPropagateOperator"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lightly_plugins_bbox_auto_propagation_nano_tracker"]
