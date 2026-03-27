@@ -2,7 +2,7 @@
 name = "lightly-studio-plugins"
 version = "0.1.0"
 description = "All Lightly Studio plugins"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
 "lightly_plugins_bbox_auto_propagation_nano_tracker",
 ]
