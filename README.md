@@ -4,7 +4,7 @@ A collection of plugins for [Lightly Studio](https://github.com/lightly-ai/light
 
 | Plugin | Description | Maintainer | Install |
 |---|---|---|---|
-| [BBox auto propagation](plugins/bbox_auto_propagation/)|Auto bbox propagation|Lightly| `pip install -e plugins/bbox_auto_propagation`|
+| [BBox auto propagation](plugins/bbox_auto_propagation_nano_tracker/)|Auto bbox propagation using nano tracker|Lightly| `pip install -e plugins/bbox_auto_propagation_nano_tracker`|
 
 ## Adding a New Plugin
 

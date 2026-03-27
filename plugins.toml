@@ -1,7 +1,7 @@
 [[plugins]]
-id = "lightly-plugins-bbox-auto-propagation"
-name = "BBox auto propagation"
-description = "xyz"
-source = "local:plugins/bbox_auto_propagation"
+id = "lightly_plugins_bbox_auto_propagation_nano_tracker"
+name = "BBox auto propagation nano tracker"
+description = "Auto bbox propagation using nano tracker"
+source = "local:plugins/bbox_auto_propagation_nano_tracker"
 maintainer = "lightly"
 tags = ["auto-labeling", "tracking"]

@@ -1,4 +1,4 @@
-"""Example of how to load videos from path with the dataset class."""
+"""BBox auto propagation plugin for Lightly-Studio."""
 
 from __future__ import annotations
 
