@@ -18,9 +18,6 @@ else:
     except ModuleNotFoundError:
         import tomli as tomllib  # type: ignore[no-redef]
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-PLUGINS_TOML = REPO_ROOT / "plugins.toml"
-
 
 def get_min_python_version(plugin_path: Path) -> str:
     """Read requires-python from the plugin's pyproject.toml and return the minimum version."""
@@ -35,8 +32,10 @@ def get_min_python_version(plugin_path: Path) -> str:
     return version
 
 
-def main() -> None:
-    with open(PLUGINS_TOML, "rb") as f:
+def get_lightly_plugins(repo_root: Path) -> list[dict[str, str]]:
+    """Return a list of matrix entries for Lightly-maintained plugins."""
+    plugins_toml = repo_root / "plugins.toml"
+    with open(plugins_toml, "rb") as f:
         data = tomllib.load(f)
 
     matrix = []
@@ -47,7 +46,7 @@ def main() -> None:
         if not source.startswith("local:"):
             continue
         rel_path = source.removeprefix("local:")
-        plugin_dir = REPO_ROOT / rel_path
+        plugin_dir = repo_root / rel_path
         if not plugin_dir.is_dir():
             print(f"WARNING: plugin directory not found: {plugin_dir}", file=sys.stderr)
             continue
@@ -59,4 +58,14 @@ def main() -> None:
             }
         )
 
+    return matrix
+
+
+def main() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    matrix = get_lightly_plugins(repo_root)
     print(json.dumps(matrix))
+
+
+if __name__ == "__main__":
+    main()
