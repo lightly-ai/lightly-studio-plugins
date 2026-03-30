@@ -23,8 +23,9 @@ jobs:
       - name: Build plugin matrix
         id: set-matrix
         run: |
-          matrix=$(uv run --python 3.12 scripts/get_lightly_plugins.py)
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          uv run --python 3.12 scripts/get_lightly_plugins.py > matrix.json
+          echo "matrix=$(cat matrix.json)" >> "$GITHUB_OUTPUT"
+          cat matrix.json
 
   # ---------------------------------------------------------------------------
   # 2. Run mypy per-plugin, on both the minimum compatible and latest Python.
