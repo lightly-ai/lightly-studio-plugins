@@ -23,23 +23,6 @@ jobs:
       - name: Build plugin matrix
         id: set-matrix
         run: |
-          uv run --no-project --python 3.12 scripts/get_lightly_plugins.py > matrix.json 2>&1 || true
-          echo "--- matrix.json ---"
-          cat matrix.json
-          echo "--- plugins.toml exists? ---"
-          ls -la plugins.toml
-          echo "--- script debug ---"
-          uv run --no-project --python 3.12 -c "
-          import sys; from pathlib import Path
-          print('cwd:', Path.cwd())
-          script = Path('scripts/get_lightly_plugins.py').resolve()
-          print('script:', script)
-          root = script.parent.parent
-          print('root:', root)
-          print('plugins.toml:', root / 'plugins.toml', (root / 'plugins.toml').exists())
-          "
-          echo "--- retry with explicit path ---"
-          uv run --no-project --python 3.12 scripts/get_lightly_plugins.py
           matrix=$(uv run --no-project --python 3.12 scripts/get_lightly_plugins.py)
           echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
 
