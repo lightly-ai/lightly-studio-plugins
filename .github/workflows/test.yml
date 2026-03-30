@@ -1,0 +1,57 @@
+name: static tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Discover Lightly-maintained plugins and build the matrix.
+  # ---------------------------------------------------------------------------
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Build plugin matrix
+        id: set-matrix
+        run: |
+          matrix=$(uv run --python 3.12 scripts/get_lightly_plugins.py)
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # 2. Run mypy per-plugin, on both the minimum compatible and latest Python.
+  # ---------------------------------------------------------------------------
+  mypy:
+    needs: discover
+    if: ${{ needs.discover.outputs.matrix != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: ${{ fromJson(needs.discover.outputs.matrix) }}
+        python-version:
+          - min       # resolved per-plugin below
+          - "3.13"
+    name: "mypy · ${{ matrix.plugin.plugin }} · py${{ matrix.python-version == 'min' && matrix.plugin.min_python || matrix.python-version }}"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Install plugin dependencies
+        run: |
+          uv venv --python ${{ matrix.python-version == 'min' && matrix.plugin.min_python || matrix.python-version }}
+          uv pip install mypy
+          uv pip install -e "./${{ matrix.plugin.path }}" || echo "::warning::pip install failed — running mypy without plugin deps"
+
+      - name: Run mypy
+        run: |
+          uv run mypy --config-file mypy.ini ${{ matrix.plugin.path }}/src/

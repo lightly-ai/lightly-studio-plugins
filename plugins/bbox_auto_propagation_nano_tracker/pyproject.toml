@@ -3,9 +3,14 @@ name = "lightly_plugins_bbox_auto_propagation_nano_tracker"
 version = "0.1.0"
 description = "BBox auto propagation using nano tracker"
 requires-python = ">=3.9"
+#TODO (Horatiu 03/2026): Remove git+https after next lightly-studio release that includes the plugin update.
+dependencies = [
+    "lightly_studio @ git+https://github.com/lightly-ai/lightly-studio.git@main",
+]
 
 [project.entry-points."lightly_studio.plugins"]
 bbox_auto_propagation_nano_tracker = "lightly_plugins_bbox_auto_propagation_nano_tracker.operator:AutoPropagateOperator"
+
 
 [build-system]
 requires = ["hatchling"]
