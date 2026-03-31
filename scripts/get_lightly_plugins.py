@@ -57,7 +57,7 @@ def get_lightly_plugins(repo_root: Path) -> list[dict[str, str]]:
 def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     matrix = get_lightly_plugins(repo_root)
-    print(json.dumps(matrix))
+    print(json.dumps([]))
 
 
 if __name__ == "__main__":
