@@ -10,12 +10,8 @@ from typing import Any
 from uuid import UUID
 
 import cv2
-from environs import Env
 from sqlmodel import Session, select
 
-import lightly_studio as ls
-from lightly_studio import db_manager
-from lightly_studio.core.video.video_dataset import VideoDataset
 from lightly_studio.models.annotation.annotation_base import (
     AnnotationBaseTable,
     AnnotationCreate,
@@ -26,7 +22,6 @@ from lightly_studio.models.collection import SampleType
 from lightly_studio.models.video import VideoFrameTable, VideoTable
 from lightly_studio.plugins.base_operator import BaseOperator, OperatorResult
 from lightly_studio.plugins.operator_context import ExecutionContext, OperatorScope
-from lightly_studio.plugins.operator_registry import operator_registry
 from lightly_studio.plugins.parameter import BaseParameter, FloatParameter
 from lightly_studio.resolvers import (
     annotation_resolver,
@@ -35,7 +30,9 @@ from lightly_studio.resolvers import (
     video_frame_resolver,
 )
 from lightly_studio.resolvers.sample_resolver.sample_filter import SampleFilter
-from lightly_studio.resolvers.video_frame_resolver.video_frame_filter import VideoFrameFilter
+from lightly_studio.resolvers.video_frame_resolver.video_frame_filter import (
+    VideoFrameFilter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +162,9 @@ class AutoPropagateOperator(BaseOperator):
             if annotation.annotation_type == AnnotationType.OBJECT_DETECTION
         ]
         if not annotations:
-            return OperatorResult(success=False, message="No object detection annotations found.")
+            return OperatorResult(
+                success=False, message="No object detection annotations found."
+            )
         if len(annotations) > 1:
             return OperatorResult(
                 success=False, message="Plugin does not support multiple annotations."
@@ -212,11 +211,16 @@ class AutoPropagateOperator(BaseOperator):
         existing_tracks = object_track_resolver.get_all_by_root_collection_id(
             session=session, root_collection_id=dataset_id
         )
-        next_track_number = max((t.object_track_number for t in existing_tracks), default=0) + 1
+        next_track_number = (
+            max((t.object_track_number for t in existing_tracks), default=0) + 1
+        )
         track_ids = object_track_resolver.create_many(
             session=session,
             tracks=[
-                ObjectTrackCreate(object_track_number=next_track_number + i, root_collection_id=dataset_id)
+                ObjectTrackCreate(
+                    object_track_number=next_track_number + i,
+                    root_collection_id=dataset_id,
+                )
                 for i in range(len(source_annotations))
             ],
         )
@@ -227,7 +231,13 @@ class AutoPropagateOperator(BaseOperator):
             det = annotation.object_detection_details
             if det is not None:
                 bbox_data.append(
-                    (annotation.annotation_label_id, det.x, det.y, det.width, det.height)
+                    (
+                        annotation.annotation_label_id,
+                        det.x,
+                        det.y,
+                        det.width,
+                        det.height,
+                    )
                 )
             else:
                 bbox_data.append(None)
@@ -235,7 +245,9 @@ class AutoPropagateOperator(BaseOperator):
         bounding_boxes: list[tuple[UUID, int, int, int, int, UUID]] = []
         for annotation, track_id, bbox in zip(source_annotations, track_ids, bbox_data):
             object_track_resolver.add_annotation_to_object_track(
-                session=session, annotation_id=annotation.sample_id, object_track_id=track_id
+                session=session,
+                annotation_id=annotation.sample_id,
+                object_track_id=track_id,
             )
             if bbox is not None:
                 label_id, x, y, w, h = bbox
@@ -259,32 +271,48 @@ class AutoPropagateOperator(BaseOperator):
         source_frame, source_annotations = resolved
 
         video = session.exec(
-            select(VideoTable).where(VideoTable.sample_id == source_frame.parent_sample_id)
+            select(VideoTable).where(
+                VideoTable.sample_id == source_frame.parent_sample_id
+            )
         ).one_or_none()
         if video is None:
-            return OperatorResult(success=False, message="Could not find video for frame.")
+            return OperatorResult(
+                success=False, message="Could not find video for frame."
+            )
 
         dataset_id = collection_resolver.get_root_collection(
             session=session, collection_id=context.collection_id
         ).collection_id
         frames_collection_id = collection_resolver.get_or_create_child_collection(
-            session=session, collection_id=dataset_id, sample_type=SampleType.VIDEO_FRAME
+            session=session,
+            collection_id=dataset_id,
+            sample_type=SampleType.VIDEO_FRAME,
         )
         bounding_boxes = self._create_tracks_and_bounding_boxes(
-            session=session, dataset_id=dataset_id, source_annotations=source_annotations
+            session=session,
+            dataset_id=dataset_id,
+            source_annotations=source_annotations,
         )
         if not bounding_boxes:
-            return OperatorResult(success=False, message="No valid bounding boxes found.")
+            return OperatorResult(
+                success=False, message="No valid bounding boxes found."
+            )
 
         backbone_path, neck_head_path = _ensure_nanotrack_models()
 
         all_frames = video_frame_resolver.get_all_by_video_ids(
             session=session, video_ids=[video.sample_id]
         )
-        frame_by_number: dict[int, VideoFrameTable] = {f.frame_number: f for f in all_frames}
+        frame_by_number: dict[int, VideoFrameTable] = {
+            f.frame_number: f for f in all_frames
+        }
 
-        max_backward_frames = int(backward_seconds * video.fps) if backward_seconds > 0 else None
-        max_forward_frames = int(forward_seconds * video.fps) if forward_seconds > 0 else None
+        max_backward_frames = (
+            int(backward_seconds * video.fps) if backward_seconds > 0 else None
+        )
+        max_forward_frames = (
+            int(forward_seconds * video.fps) if forward_seconds > 0 else None
+        )
 
         cap = cv2.VideoCapture(video.file_path_abs)
         if not cap.isOpened():
@@ -307,7 +335,8 @@ class AutoPropagateOperator(BaseOperator):
 
         if not new_annotation_creates:
             return OperatorResult(
-                success=True, message="Tracking completed but no new annotations were created."
+                success=True,
+                message="Tracking completed but no new annotations were created.",
             )
 
         annotation_resolver.create_many(
