@@ -27,9 +27,9 @@ jobs:
           echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
-  # 2. Run mypy per-plugin, on both the minimum compatible and latest Python.
+  # 2. Run static checks (format + mypy) per-plugin.
   # ---------------------------------------------------------------------------
-  mypy:
+  static-checks:
     needs: discover
     if: ${{ needs.discover.outputs.matrix != '[]' && needs.discover.outputs.matrix != '' }}
     runs-on: ubuntu-latest
@@ -40,11 +40,15 @@ jobs:
         python-version:
           - min       # resolved per-plugin below
           - "3.13"
-    name: "mypy · ${{ matrix.plugin.plugin }} · py${{ matrix.python-version == 'min' && matrix.plugin.min_python || matrix.python-version }}"
+    name: "static-checks · ${{ matrix.plugin.plugin }} · py${{ matrix.python-version == 'min' && matrix.plugin.min_python || matrix.python-version }}"
     steps:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v4
+
+      - name: Check format with ruff
+        run: |
+          uv run --no-project --with ruff ruff format --check ${{ matrix.plugin.path }}/
 
       - name: Install plugin dependencies
         run: |
