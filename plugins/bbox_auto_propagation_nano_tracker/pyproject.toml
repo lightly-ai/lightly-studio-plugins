@@ -2,7 +2,7 @@
 name = "lightly_plugins_bbox_auto_propagation_nano_tracker"
 version = "0.1.0"
 description = "BBox auto propagation using nano tracker"
-requires-python = ">=3.9"
+requires-python- = ">=3.9"
 dependencies = [
     "lightly_studio",
     "opencv-python",

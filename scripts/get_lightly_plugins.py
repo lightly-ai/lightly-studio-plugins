@@ -16,9 +16,11 @@ def get_min_python_version(plugin_path: Path) -> str:
     """Read requires-python from the plugin's pyproject.toml and return the minimum version."""
     pyproject = plugin_path / "pyproject.toml"
     if not pyproject.exists():
-        return "3.9"
+        raise FileNotFoundError(f"pyproject.toml not found in plugin directory: {plugin_path}")
     data = toml.load(pyproject)
-    requires = data.get("project", {}).get("requires-python", ">=3.9")
+    requires = data.get("project", {}).get("requires-python", "")
+    if not requires:
+        raise ValueError(f"requires-python not found in pyproject.toml for plugin: {plugin_path}")
     # Strip operator prefix (>=, ~=, ==, etc.) to get the bare version.
     version = requires.lstrip("><=!~^ ")
     return version
