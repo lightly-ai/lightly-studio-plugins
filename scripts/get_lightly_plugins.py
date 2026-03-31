@@ -65,7 +65,3 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     matrix = get_lightly_plugins(repo_root)
     print(json.dumps(matrix))
-
-
-if __name__ == "__main__":
-    main()

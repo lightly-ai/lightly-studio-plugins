@@ -54,8 +54,8 @@ jobs:
         run: |
           uv venv --python ${{ matrix.python-version == 'min' && matrix.plugin.min_python || matrix.python-version }}
           uv pip install mypy
-          uv pip install -e "./${{ matrix.plugin.path }}" || echo "::warning::pip install failed — running mypy without plugin deps"
+          uv pip install -e "./${{ matrix.plugin.path }}"
 
-      - name: Run mypy
+      - name: Type check with mypy
         run: |
           uv run mypy --config-file mypy.ini ${{ matrix.plugin.path }}/src/
