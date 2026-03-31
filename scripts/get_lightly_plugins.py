@@ -9,14 +9,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomllib  # type: ignore[import-not-found]
-    except ModuleNotFoundError:
-        import tomli as tomllib  # type: ignore[no-redef]
+import toml
 
 
 def get_min_python_version(plugin_path: Path) -> str:
@@ -24,8 +17,7 @@ def get_min_python_version(plugin_path: Path) -> str:
     pyproject = plugin_path / "pyproject.toml"
     if not pyproject.exists():
         return "3.9"
-    with open(pyproject, "rb") as f:
-        data = tomllib.load(f)
+    data = toml.load(pyproject)
     requires = data.get("project", {}).get("requires-python", ">=3.9")
     # Strip operator prefix (>=, ~=, ==, etc.) to get the bare version.
     version = requires.lstrip("><=!~^ ")
@@ -35,8 +27,7 @@ def get_min_python_version(plugin_path: Path) -> str:
 def get_lightly_plugins(repo_root: Path) -> list[dict[str, str]]:
     """Return a list of matrix entries for Lightly-maintained plugins."""
     plugins_toml = repo_root / "plugins.toml"
-    with open(plugins_toml, "rb") as f:
-        data = tomllib.load(f)
+    data = toml.load(plugins_toml)
 
     matrix = []
     for plugin in data.get("plugins", []):
