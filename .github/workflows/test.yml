@@ -25,13 +25,16 @@ jobs:
         run: |
           matrix=$(uv run --no-project --python 3.12 scripts/get_lightly_plugins.py)
           echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+          if [ -z "$matrix" ] || [ "$matrix" = "[]" ]; then
+            echo "::error::No Lightly-maintained plugins found"
+            exit 1
+          fi
 
   # ---------------------------------------------------------------------------
   # 2. Run static checks (format + mypy) per-plugin.
   # ---------------------------------------------------------------------------
   static-checks:
     needs: discover
-    if: ${{ needs.discover.outputs.matrix != '[]' && needs.discover.outputs.matrix != '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -39,7 +42,6 @@ jobs:
         plugin: ${{ fromJson(needs.discover.outputs.matrix) }}
         python-version:
           - min       # resolved per-plugin below
-          - "3.13"
     name: "static-checks · ${{ matrix.plugin.plugin }} · py${{ matrix.python-version == 'min' && matrix.plugin.min_python || matrix.python-version }}"
     steps:
       - uses: actions/checkout@v4
