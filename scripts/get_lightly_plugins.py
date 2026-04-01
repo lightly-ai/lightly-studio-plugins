@@ -32,6 +32,9 @@ def get_lightly_plugins(repo_root: Path) -> list[dict[str, str]]:
     data = toml.load(plugins_toml)
 
     matrix = []
+    plugins = data.get("plugins", [])
+    if not plugins:
+        raise ValueError("No plugins found in plugins.toml")
     for plugin in data.get("plugins", []):
         if plugin.get("maintainer") != "lightly":
             continue
@@ -50,7 +53,8 @@ def get_lightly_plugins(repo_root: Path) -> list[dict[str, str]]:
                 "min_python": get_min_python_version(plugin_dir),
             }
         )
-
+    if matrix == []:
+        raise ValueError("No lightly-maintained plugins found in plugins.toml")
     return matrix
 
 

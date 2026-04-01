@@ -25,10 +25,6 @@ jobs:
         run: |
           matrix=$(uv run --no-project --python 3.12 --with toml scripts/get_lightly_plugins.py)
           echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
-          if [ -z "$matrix" ] || [ "$matrix" = "[]" ]; then
-            echo "::error::No Lightly-maintained plugins found"
-            exit 1
-          fi
 
   # ---------------------------------------------------------------------------
   # 2. Run static checks (format + mypy) per-plugin.
