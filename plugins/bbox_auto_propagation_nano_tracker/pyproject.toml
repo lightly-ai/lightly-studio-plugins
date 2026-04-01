@@ -9,11 +9,6 @@ dependencies = [
     "environs",
     "sqlmodel",
 ]
-[dependency-groups]
-dev = [
-    "ruff>=0.7.4",
-    "mypy>=1.19.1",
-]
 
 [project.entry-points."lightly_studio.plugins"]
 bbox_auto_propagation_nano_tracker = "lightly_plugins_bbox_auto_propagation_nano_tracker.operator:AutoPropagateOperator"

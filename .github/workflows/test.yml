@@ -49,7 +49,7 @@ jobs:
       - name: Install plugin dependencies
         run: |
           uv venv --python ${{ matrix.plugin.min_python }}
-          uv pip install mypy
+          uv pip install -r dev-requirements.txt
           uv pip install -e "./${{ matrix.plugin.path }}"
 
       - name: Type check with mypy
