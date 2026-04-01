@@ -1,0 +1,57 @@
+name: static tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Discover Lightly-maintained plugins and build the matrix.
+  # ---------------------------------------------------------------------------
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Build plugin matrix
+        id: set-matrix
+        run: |
+          matrix=$(uv run --no-project --python 3.12 --with toml scripts/get_lightly_plugins.py)
+          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # 2. Run static checks (format + mypy) per-plugin.
+  # ---------------------------------------------------------------------------
+  static-checks:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: ${{ fromJson(needs.discover.outputs.matrix) }}
+    name: "static-checks · ${{ matrix.plugin.plugin }} · py${{ matrix.plugin.min_python }}"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Check format with ruff
+        run: |
+          uv run --no-project --with ruff ruff format --check ${{ matrix.plugin.path }}/
+
+      - name: Install plugin dependencies
+        run: |
+          uv venv --python ${{ matrix.plugin.min_python }}
+          uv pip install -r dev-requirements.txt
+          uv pip install -e "./${{ matrix.plugin.path }}"
+
+      - name: Type check with mypy
+        run: |
+          uv run mypy --config-file mypy.ini ${{ matrix.plugin.path }}/src/
