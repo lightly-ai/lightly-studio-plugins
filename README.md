@@ -5,6 +5,7 @@ A collection of plugins for [Lightly Studio](https://github.com/lightly-ai/light
 | Plugin | Description | Maintainer | Install |
 |---|---|---|---|
 | [BBox auto propagation nano tracker](plugins/bbox_auto_propagation_nano_tracker/)|Auto bbox propagation using nano tracker|Lightly| `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/bbox_auto_propagation_nano_tracker/`|
+| [SAM3 Segmentation](plugins/sam3_segmentation/)|Automatic instance segmentation using SAM3 with a text prompt. Requires HuggingFace access to `facebook/sam3`.|Lightly| `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/sam3_segmentation/`|
 
 ## Adding a New Plugin
 
