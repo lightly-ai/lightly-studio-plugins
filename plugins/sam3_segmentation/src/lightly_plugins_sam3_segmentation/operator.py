@@ -11,8 +11,7 @@ from uuid import UUID
 import PIL.Image
 import torch
 from sqlmodel import Session
-from transformers.models.sam3.modeling_sam3 import Sam3Model
-from transformers.models.sam3.processing_sam3 import Sam3Processor
+from transformers import Sam3Model, Sam3Processor
 
 from lightly_studio.models.annotation.annotation_base import (
     AnnotationCreate,

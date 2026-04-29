@@ -2,14 +2,14 @@
 name = "lightly_plugins_sam3_segmentation"
 version = "0.1.0"
 description = "SAM3 instance segmentation plugin for Lightly Studio"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "lightly_studio>=0.4.12",
     "torch",
-    "transformers>=4.50.0",
+    "transformers>=4.57.2",
     "Pillow",
     "numpy",
-    "huggingface_hub>=0.20",
+    "huggingface-hub>=0.34",
     "sqlmodel",
     "labelformat",
 ]
