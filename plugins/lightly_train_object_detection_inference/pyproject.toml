@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "LightlyTrain inference operator for object detection auto-labeling"
 requires-python = ">=3.12"
 dependencies = [
-    "lightly_studio>=0.4.12",
+    "lightly_studio>=0.4.13",
     "lightly_train",
     "pillow",
     "sqlmodel",

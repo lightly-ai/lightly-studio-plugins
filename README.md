@@ -11,7 +11,7 @@ A collection of plugins for [Lightly Studio](https://github.com/lightly-ai/light
 
 1. Create a new directory under `plugins/`:
    ```
-   plugins/my-plugin/
+   plugins/my_plugin/
    ├── pyproject.toml
    └── src/lightly_plugins_my_plugin/
        ├── __init__.py
