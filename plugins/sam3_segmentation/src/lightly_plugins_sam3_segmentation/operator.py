@@ -121,8 +121,8 @@ class SAM3SegmentationOperator(BaseOperator):
         # `facebook/sam3` may resolve to the video processor through AutoProcessor in
         # recent `transformers` builds. Load the image SAM3 classes explicitly so
         # text-prompted image segmentation stays on the correct code path.
-        self._model = Sam3Model.from_pretrained(model_id).to(device).eval()
-        self._processor = Sam3Processor.from_pretrained(model_id)  # type: ignore[no-untyped-call]
+        self._model = Sam3Model.from_pretrained(model_id).to(device).eval()  # type: ignore[arg-type]
+        self._processor = Sam3Processor.from_pretrained(model_id)
         self._model_device = device
         self._loaded_model_id = model_id
 
@@ -134,21 +134,23 @@ class SAM3SegmentationOperator(BaseOperator):
         parameters: dict[str, Any],
     ) -> OperatorResult:
         model_id: str = parameters.get("model_id", _DEFAULT_MODEL_ID)
-        prompt: str = parameters.get("prompt", None)
-        if prompt is None:
-            OperatorResult(
+        prompt_value = parameters.get("prompt")
+        if prompt_value is None:
+            return OperatorResult(
                 success=False,
                 message="Please provide a prompt.",
             )
+        prompt: str = prompt_value
         confidence_threshold: float = parameters.get("confidence_threshold", 0.5)
         use_gpu: bool = parameters.get("use_gpu", False)
         device = "cuda" if (use_gpu and torch.cuda.is_available()) else "cpu"
-        collection_name = parameters.get("collection_name", None)
-        if collection_name is None:
-            OperatorResult(
+        collection_name_value = parameters.get("collection_name")
+        if collection_name_value is None:
+            return OperatorResult(
                 success=False,
                 message="Please provide a collection name.",
             )
+        collection_name: str = collection_name_value
 
         self._load_model(model_id, device)
 
