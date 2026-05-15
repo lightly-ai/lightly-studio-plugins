@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, cast
 from uuid import UUID
 
-import lightly_train  # type: ignore[import-not-found]
-from lightly_train._commands import predict_task_helpers  # type: ignore[import-not-found]
+import lightly_train
+from lightly_train._commands import predict_task_helpers
 from PIL import Image
 from sqlmodel import Session
+from torch import Tensor
 
 from lightly_studio.models.annotation.annotation_base import (
     AnnotationCreate,
@@ -37,6 +38,16 @@ DEFAULT_SCORE_THRESHOLD = 0.5
 
 PARAM_MODEL_NAME = "model_name"
 PARAM_SCORE_THRESHOLD = "score_threshold"
+
+
+class _ObjectDetectionInferenceModel(Protocol):
+    classes: dict[int, str]
+
+    def predict(
+        self,
+        image: Image.Image,
+        threshold: float = DEFAULT_SCORE_THRESHOLD,
+    ) -> dict[str, Tensor]: ...
 
 
 @dataclass
@@ -92,7 +103,7 @@ class LightlyTrainObjectDetectionInferenceOperator(BaseOperator):
                 message="score_threshold must be between 0 and 1",
             )
 
-        model = lightly_train.load_model(model=model_name)
+        model = _as_object_detection_model(lightly_train.load_model(model=model_name))
         label_map = _get_or_create_label_map(
             session=session,
             root_collection_id=collection_id,
@@ -164,6 +175,20 @@ class LightlyTrainObjectDetectionInferenceOperator(BaseOperator):
             success=True,
             message=f"Auto-labeled {processed_sample_count} samples.",
         )
+
+
+def _as_object_detection_model(model: Any) -> _ObjectDetectionInferenceModel:
+    """Validate that the loaded model exposes object-detection inference APIs."""
+    classes = getattr(model, "classes", None)
+    if not isinstance(classes, dict):
+        raise TypeError(
+            "Loaded model does not expose a valid object-detection class map"
+        )
+    if not all(isinstance(category_id, int) for category_id in classes):
+        raise TypeError("Loaded model class map must use integer category ids")
+    if not callable(getattr(model, "predict", None)):
+        raise TypeError("Loaded model does not support prediction")
+    return cast(_ObjectDetectionInferenceModel, model)
 
 
 def _get_or_create_label_map(
