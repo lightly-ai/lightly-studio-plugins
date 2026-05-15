@@ -6,12 +6,13 @@ A collection of plugins for [Lightly Studio](https://github.com/lightly-ai/light
 |---|---|---|---|
 | [BBox auto propagation nano tracker](plugins/bbox_auto_propagation_nano_tracker/)|Auto bbox propagation using nano tracker|Lightly| `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/bbox_auto_propagation_nano_tracker/`|
 | [SAM3 Segmentation](plugins/sam3_segmentation/)|Automatic instance segmentation using SAM3 with a text prompt. Requires HuggingFace access to `facebook/sam3`.|Lightly| `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/sam3_segmentation/`|
+| [LightlyTrain object detection inference](plugins/lightly_train_object_detection_inference/)|LightlyTrain inference operator for object detection auto-labeling|Lightly| `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/lightly_train_object_detection_inference/`|
 
 ## Adding a New Plugin
 
 1. Create a new directory under `plugins/`:
    ```
-   plugins/my-plugin/
+   plugins/my_plugin/
    ├── pyproject.toml
    └── src/lightly_plugins_my_plugin/
        ├── __init__.py
@@ -24,6 +25,6 @@ A collection of plugins for [Lightly Studio](https://github.com/lightly-ai/light
    my_plugin = "lightly_plugins_my_plugin.operator:MyPluginOperator"
    ```
 
-3. Update Readme.md and plugins.toml.
+3. Update `README.md` and `plugins.toml`.
 
-4. Install: `pip install -e plugins/my-plugin`
+4. Install: `pip install -e plugins/my_plugin`
