@@ -5,3 +5,11 @@ description = "Auto bbox propagation using nano tracker"
 source = "local:plugins/bbox_auto_propagation_nano_tracker"
 maintainer = "lightly"
 tags = ["auto-labeling", "tracking"]
+
+[[plugins]]
+id = "lightly_plugins_lightly_train_object_detection_inference"
+name = "LightlyTrain object detection inference"
+description = "LightlyTrain inference operator for object detection auto-labeling"
+source = "local:plugins/lightly_train_object_detection_inference"
+maintainer = "lightly"
+tags = ["auto-labeling", "object-detection", "inference"]
