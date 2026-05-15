@@ -43,6 +43,8 @@ _NANOTRACK_BASE_URL = (
 _BACKBONE_FILENAME = "nanotrack_backbone_sim.onnx"
 _NECKHEAD_FILENAME = "nanotrack_head_sim.onnx"
 
+COLLECTION_NAME = "bbox_auto_propagation_nanotrack"
+
 
 def _ensure_nanotrack_models() -> tuple[Path, Path]:
     """Download NanoTracker model files if they don't exist."""
@@ -219,7 +221,7 @@ class AutoPropagateOperator(BaseOperator):
             tracks=[
                 ObjectTrackCreate(
                     object_track_number=next_track_number + i,
-                    root_collection_id=dataset_id,
+                    dataset_id=dataset_id,
                 )
                 for i in range(len(source_annotations))
             ],
@@ -280,12 +282,18 @@ class AutoPropagateOperator(BaseOperator):
                 success=False, message="Could not find video for frame."
             )
 
-        dataset_id = collection_resolver.get_root_collection(
-            session=session, collection_id=context.collection_id
-        ).collection_id
+        if source_frame.sample is None:
+            return OperatorResult(
+                success=False, message="Could not resolve frame sample."
+            )
+
+        root_collection = collection_resolver.get_root_collection(
+            session=session, collection_id=source_frame.sample.collection_id
+        )
+        dataset_id = root_collection.dataset_id
         frames_collection_id = collection_resolver.get_or_create_child_collection(
             session=session,
-            collection_id=dataset_id,
+            collection_id=source_frame.sample.collection_id,
             sample_type=SampleType.VIDEO_FRAME,
         )
         bounding_boxes = self._create_tracks_and_bounding_boxes(
@@ -343,6 +351,7 @@ class AutoPropagateOperator(BaseOperator):
             session=session,
             parent_collection_id=frames_collection_id,
             annotations=new_annotation_creates,
+            collection_name=COLLECTION_NAME,
         )
 
         n_frames = len({a.parent_sample_id for a in new_annotation_creates})
