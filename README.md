@@ -1,12 +1,26 @@
 # Lightly Studio Plugins
 
-A collection of plugins for [Lightly Studio](https://github.com/lightly-ai/lightly-studio). Each plugin is independently pip-installable and auto-discovered via Python entry points.
+A collection of installable plugins that extend the base functionality of [Lightly Studio](https://github.com/lightly-ai/lightly-studio).
+
+Each plugin in this repository is packaged independently, installs in a single command, and is auto-discovered by Lightly Studio via Python entry points.
+
+## Installing a Plugin
+
+Choose a plugin from the table below and install it directly from this repository by pointing `pip` at the plugin subdirectory:
+
+```bash
+pip install "git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/<plugin-directory>"
+```
+
+After installation, the plugin is available in Lightly Studio automatically.
+
+## Available Plugins
 
 | Plugin | Description | Maintainer | Install |
 |---|---|---|---|
 | [BBox auto propagation nano tracker](plugins/bbox_auto_propagation_nano_tracker/)|Auto bbox propagation using nano tracker|Lightly| `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/bbox_auto_propagation_nano_tracker/`|
 
-## Adding a New Plugin
+## Contributing Plugins
 
 1. Create a new directory under `plugins/`:
    ```
