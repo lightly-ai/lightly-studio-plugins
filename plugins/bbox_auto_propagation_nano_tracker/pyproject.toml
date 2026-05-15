@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "BBox auto propagation using nano tracker"
 requires-python = ">=3.9"
 dependencies = [
-    "lightly_studio>=0.4.12",
+    "lightly_studio>=0.4.13",
     "opencv-python",
     "environs",
     "sqlmodel",
