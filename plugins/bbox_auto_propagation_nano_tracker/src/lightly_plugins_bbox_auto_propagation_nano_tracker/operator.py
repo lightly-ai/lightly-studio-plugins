@@ -208,8 +208,8 @@ class AutoPropagateOperator(BaseOperator):
         source_annotations: list[AnnotationBaseTable],
     ) -> list[tuple[UUID, int, int, int, int, UUID]]:
         """Create one ObjectTrack per annotation, link the source annotation, and return boxes."""
-        existing_tracks = object_track_resolver.get_all_by_root_collection_id(
-            session=session, root_collection_id=dataset_id
+        existing_tracks = object_track_resolver.get_all_by_dataset_id(
+            session=session, dataset_id=dataset_id
         )
         next_track_number = (
             max((t.object_track_number for t in existing_tracks), default=0) + 1
