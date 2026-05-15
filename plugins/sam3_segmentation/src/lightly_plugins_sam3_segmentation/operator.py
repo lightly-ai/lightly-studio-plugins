@@ -97,6 +97,12 @@ class SAM3SegmentationOperator(BaseOperator):
                 default=False,
                 description="Run inference on GPU (CUDA). Falls back to CPU if unavailable.",
             ),
+            StringParameter(
+                name="collection_name",
+                required=True,
+                default="SAM3_auto_label",
+                description="The target annotation collection name.",
+            ),
         ]
 
     @property
@@ -128,10 +134,21 @@ class SAM3SegmentationOperator(BaseOperator):
         parameters: dict[str, Any],
     ) -> OperatorResult:
         model_id: str = parameters.get("model_id", _DEFAULT_MODEL_ID)
-        prompt: str = parameters.get("prompt", "person")
+        prompt: str = parameters.get("prompt", None)
+        if prompt is None:
+            OperatorResult(
+                success=False,
+                message="Please provide a prompt.",
+            )
         confidence_threshold: float = parameters.get("confidence_threshold", 0.5)
         use_gpu: bool = parameters.get("use_gpu", False)
         device = "cuda" if (use_gpu and torch.cuda.is_available()) else "cpu"
+        collection_name = parameters.get("collection_name", None)
+        if collection_name is None:
+            OperatorResult(
+                success=False,
+                message="Please provide a collection name.",
+            )
 
         self._load_model(model_id, device)
 
@@ -210,6 +227,7 @@ class SAM3SegmentationOperator(BaseOperator):
             session=session,
             parent_collection_id=context.collection_id,
             annotations=annotation_creates,
+            collection_name=collection_name,
         )
         return OperatorResult(
             success=True,
