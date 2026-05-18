@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import PIL.Image
@@ -39,8 +39,10 @@ from lightly_plugins_sam3_segmentation.utils import prepare_segmentation_entries
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL_ID = "facebook/sam3"
-_SEGMENTATION_ANNOTATION_TYPE: AnnotationType = getattr(
-    AnnotationType, "SEGMENTATION_MASK", AnnotationType.INSTANCE_SEGMENTATION
+_SEGMENTATION_ANNOTATION_TYPE: AnnotationType = cast(
+    AnnotationType,
+    getattr(AnnotationType, "SEGMENTATION_MASK", None)
+    or getattr(AnnotationType, "INSTANCE_SEGMENTATION"),
 )
 
 
@@ -122,6 +124,16 @@ class SAM3SegmentationOperator(BaseOperator):
         self._model_device = device
         self._loaded_model_id = model_id
 
+    def _build_runtime_error_result(self, exc: Exception) -> OperatorResult:
+        logger.exception("SAM3 segmentation failed: %s", exc)
+        return OperatorResult(
+            success=False,
+            message=(
+                "SAM3 segmentation failed. Verify HuggingFace access for the selected "
+                "model, run `hf auth login`, and check the logs for details."
+            ),
+        )
+
     def execute(
         self,
         *,
@@ -163,10 +175,20 @@ class SAM3SegmentationOperator(BaseOperator):
             session=session, collection_id=context.collection_id, filters=context_filter
         )
 
-        self._load_model(model_id, device)
+        samples = list(result.samples)
+        if not samples:
+            return OperatorResult(
+                success=True,
+                message="No samples found for current view.",
+            )
+
+        try:
+            self._load_model(model_id, device)
+        except Exception as exc:
+            return self._build_runtime_error_result(exc)
 
         raw_detections: list[tuple[Any, Any]] = []  # (sample, entry)
-        for sample in result.samples:
+        for sample in samples:
             try:
                 with PIL.Image.open(sample.file_path_abs) as opened_image:
                     image = opened_image.convert("RGB")
@@ -176,18 +198,21 @@ class SAM3SegmentationOperator(BaseOperator):
                 )
                 continue
 
-            inputs = self._processor(images=image, text=prompt, return_tensors="pt")
-            inputs = {k: v.to(device) for k, v in inputs.items()}
+            try:
+                inputs = self._processor(images=image, text=prompt, return_tensors="pt")
+                inputs = {k: v.to(device) for k, v in inputs.items()}
 
-            with torch.no_grad():
-                outputs = self._model(**inputs)
+                with torch.no_grad():
+                    outputs = self._model(**inputs)
 
-            post_results = self._processor.post_process_instance_segmentation(
-                outputs,
-                threshold=confidence_threshold,
-                target_sizes=[(sample.height, sample.width)],
-            )
-            detections = post_results[0]
+                post_results = self._processor.post_process_instance_segmentation(
+                    outputs,
+                    threshold=confidence_threshold,
+                    target_sizes=[(sample.height, sample.width)],
+                )
+                detections = post_results[0]
+            except Exception as exc:
+                return self._build_runtime_error_result(exc)
 
             entries = prepare_segmentation_entries(
                 boxes=detections["boxes"],
