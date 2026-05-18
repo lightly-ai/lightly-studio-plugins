@@ -40,6 +40,10 @@ from lightly_plugins_sam3_segmentation.utils import prepare_segmentation_entries
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL_ID = "facebook/sam3"
+if hasattr(AnnotationType, "SEGMENTATION_MASK"):
+    _SEGMENTATION_ANNOTATION_TYPE = AnnotationType.SEGMENTATION_MASK
+else:
+    _SEGMENTATION_ANNOTATION_TYPE = AnnotationType.INSTANCE_SEGMENTATION
 
 
 def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
@@ -91,12 +95,6 @@ class SAM3SegmentationOperator(BaseOperator):
                 default=0.5,
                 description="Minimum confidence score for keeping a prediction",
             ),
-            BoolParameter(
-                name="use_gpu",
-                required=False,
-                default=False,
-                description="Run inference on GPU (CUDA). Falls back to CPU if unavailable.",
-            ),
             StringParameter(
                 name="collection_name",
                 required=True,
@@ -142,8 +140,7 @@ class SAM3SegmentationOperator(BaseOperator):
             )
         prompt: str = prompt_value
         confidence_threshold: float = parameters.get("confidence_threshold", 0.5)
-        use_gpu: bool = parameters.get("use_gpu", False)
-        device = "cuda" if (use_gpu and torch.cuda.is_available()) else "cpu"
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         collection_name_value = parameters.get("collection_name")
         if collection_name_value is None:
             return OperatorResult(
@@ -177,7 +174,8 @@ class SAM3SegmentationOperator(BaseOperator):
         annotation_creates: list[AnnotationCreate] = []
         for sample in result.samples:
             try:
-                image = PIL.Image.open(sample.file_path_abs).convert("RGB")
+                with PIL.Image.open(sample.file_path_abs) as opened_image:
+                    image = opened_image.convert("RGB")
             except Exception:
                 logger.warning(
                     "Could not open image: %s — skipping.", sample.file_path_abs
@@ -208,7 +206,7 @@ class SAM3SegmentationOperator(BaseOperator):
                 annotation_creates.append(
                     AnnotationCreate(
                         annotation_label_id=label_id,
-                        annotation_type=AnnotationType.INSTANCE_SEGMENTATION,
+                        annotation_type=_SEGMENTATION_ANNOTATION_TYPE,
                         parent_sample_id=sample.sample_id,
                         confidence=entry["score"],
                         x=x,
