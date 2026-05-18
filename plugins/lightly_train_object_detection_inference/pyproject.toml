@@ -1,0 +1,22 @@
+[project]
+name = "lightly_plugins_lightly_train_object_detection_inference"
+version = "0.1.0"
+description = "LightlyTrain inference operator for object detection auto-labeling"
+requires-python = ">=3.12"
+dependencies = [
+    "lightly_studio>=0.4.13",
+    "lightly_train",
+    "pillow",
+    "sqlmodel",
+]
+
+[project.entry-points."lightly_studio.plugins"]
+lightly_train_object_detection_inference = "lightly_plugins_lightly_train_object_detection_inference.operator:LightlyTrainObjectDetectionInferenceOperator"
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lightly_plugins_lightly_train_object_detection_inference"]
