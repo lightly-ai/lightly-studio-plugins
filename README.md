@@ -4,6 +4,12 @@ A collection of installable plugins that extend the base functionality of [Light
 
 Each plugin in this repository is packaged independently, installs in a single command, and is auto-discovered by Lightly Studio via Python entry points.
 
+<video autoplay loop muted playsinline controls style="width: 100%;">
+  <source src="https://storage.googleapis.com/lightly-public/studio/sam3_plugin.mp4" type="video/mp4">
+</video>
+
+<p align="center"><em>SAM3 Segmenation Plugin</em></p>
+
 ## Installing a Plugin
 
 Choose a plugin from the table below and install it directly from this repository by pointing `pip` at the plugin subdirectory:
