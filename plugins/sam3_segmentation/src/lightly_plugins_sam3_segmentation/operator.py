@@ -39,10 +39,9 @@ from lightly_plugins_sam3_segmentation.utils import prepare_segmentation_entries
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL_ID = "facebook/sam3"
-if hasattr(AnnotationType, "SEGMENTATION_MASK"):
-    _SEGMENTATION_ANNOTATION_TYPE = AnnotationType.SEGMENTATION_MASK
-else:
-    _SEGMENTATION_ANNOTATION_TYPE = AnnotationType.INSTANCE_SEGMENTATION
+_SEGMENTATION_ANNOTATION_TYPE: AnnotationType = getattr(
+    AnnotationType, "SEGMENTATION_MASK", AnnotationType.INSTANCE_SEGMENTATION
+)
 
 
 def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
