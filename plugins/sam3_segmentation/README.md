@@ -24,13 +24,13 @@ uv pip install "git+https://github.com/lightly-ai/lightly-studio-plugins.git#sub
 
 ### 4. GPU (optional)
 
-By default the plugin runs on CPU. To use a CUDA GPU, reinstall PyTorch with the appropriate CUDA build:
+By default the plugin runs on CUDA if available. To use a CUDA GPU, reinstall PyTorch with the appropriate CUDA build:
 
 ```bash
 uv pip install torch --index-url https://download.pytorch.org/whl/cu121
 ```
 
-If CUDA is available, the plugin will use it automatically.
+If CUDA is not available, the plugin will run on CPU automatically.
 
 ## Parameters
 

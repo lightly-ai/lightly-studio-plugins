@@ -24,7 +24,6 @@ from lightly_studio.resolvers.image_filter import ImageFilter
 from lightly_studio.resolvers.sample_resolver.sample_filter import SampleFilter
 from lightly_studio.plugins.parameter import (
     BaseParameter,
-    BoolParameter,
     FloatParameter,
     StringParameter,
 )
@@ -149,17 +148,11 @@ class SAM3SegmentationOperator(BaseOperator):
             )
         collection_name: str = collection_name_value
 
-        self._load_model(model_id, device)
-
         collection = collection_resolver.get_by_id(
             session=session, collection_id=context.collection_id
         )
         if collection is None:
             return OperatorResult(success=False, message="Collection not found.")
-
-        label_id = _get_or_create_label(
-            session=session, dataset_id=collection.dataset_id, label_name=prompt
-        )
 
         context_filter: ImageFilter | None = None
         if isinstance(context.context_filter, SampleFilter):
@@ -171,7 +164,9 @@ class SAM3SegmentationOperator(BaseOperator):
             session=session, collection_id=context.collection_id, filters=context_filter
         )
 
-        annotation_creates: list[AnnotationCreate] = []
+        self._load_model(model_id, device)
+
+        raw_detections: list[tuple[Any, Any]] = []  # (sample, entry)
         for sample in result.samples:
             try:
                 with PIL.Image.open(sample.file_path_abs) as opened_image:
@@ -202,25 +197,33 @@ class SAM3SegmentationOperator(BaseOperator):
                 image_size=(sample.width, sample.height),
             )
             for entry in entries:
-                x, y, w, h = entry["box"]
-                annotation_creates.append(
-                    AnnotationCreate(
-                        annotation_label_id=label_id,
-                        annotation_type=_SEGMENTATION_ANNOTATION_TYPE,
-                        parent_sample_id=sample.sample_id,
-                        confidence=entry["score"],
-                        x=x,
-                        y=y,
-                        width=w,
-                        height=h,
-                        segmentation_mask=entry["rle"],
-                    )
-                )
+                raw_detections.append((sample, entry))
 
-        if not annotation_creates:
+        if not raw_detections:
             return OperatorResult(
                 success=True,
                 message="Segmentation complete. No annotations created.",
+            )
+
+        label_id = _get_or_create_label(
+            session=session, dataset_id=collection.dataset_id, label_name=prompt
+        )
+
+        annotation_creates: list[AnnotationCreate] = []
+        for sample, entry in raw_detections:
+            x, y, w, h = entry["box"]
+            annotation_creates.append(
+                AnnotationCreate(
+                    annotation_label_id=label_id,
+                    annotation_type=_SEGMENTATION_ANNOTATION_TYPE,
+                    parent_sample_id=sample.sample_id,
+                    confidence=entry["score"],
+                    x=x,
+                    y=y,
+                    width=w,
+                    height=h,
+                    segmentation_mask=entry["rle"],
+                )
             )
 
         annotation_resolver.create_many(
