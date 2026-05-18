@@ -1,3 +1,29 @@
+<p align="center">
+  <a href="https://lightly.ai/lightly-studio"> 
+    <picture>
+      <source
+        media="(prefers-color-scheme: dark)"
+        srcset="https://storage.googleapis.com/lightly-public/studio/lightlystudio_standard_horizontal_light.png"
+      />
+      <source
+        media="(prefers-color-scheme: light)"
+        srcset="https://storage.googleapis.com/lightly-public/studio/lightlystudio_standard_horizontal_dark.png"
+      />
+      <img
+        src="https://storage.googleapis.com/lightly-public/studio/lightlystudio_standard_horizontal_dark.png"
+        height="50"
+        alt="LightlyStudio logo"
+      />
+    </picture>
+  </a>
+</p>
+<p align="center"><strong>LightlyStudio Plugins</strong></p>
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
+  <a href="https://docs.lightly.ai/studio/concepts_and_tools/plugins/"><img src="https://img.shields.io/badge/Docs-blue" alt="Documentation" /></a>
+</p>
+
+---
 # Lightly Studio Plugins
 
 A collection of plugins for [Lightly Studio](https://github.com/lightly-ai/lightly-studio). Each plugin is independently pip-installable and auto-discovered via Python entry points.
