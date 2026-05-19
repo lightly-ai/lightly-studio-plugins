@@ -12,47 +12,70 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
 ## Available Plugins
 
-### [BBox auto propagation nano tracker](plugins/bbox_auto_propagation_nano_tracker/)
+- [BBox auto propagation nano tracker](plugins/bbox_auto_propagation_nano_tracker/)  
+  Propagates boxes from one annotated video frame to other frames in the same video.
 
-Propagates bounding boxes from one annotated video frame to other frames in the same video to reduce manual labeling effort. If triggered from a frame, all bounding box annotations on that frame are propagated. If triggered from an annotation, only the selected annotation is propagated.
+  <details>
+  <summary>Details</summary>
 
-- Scope: video only, within a single video
-- Entry points: frame or annotation
-- Controls: forward and backward propagation windows in seconds
-- Tradeoff: uses OpenCV NanoTracker, which is lightweight and fast on many machines but less robust on difficult motion, occlusion, or scale changes
-- Maintainer: Lightly
-- Install:
-  `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/bbox_auto_propagation_nano_tracker/`
+  If triggered from a frame, all bounding box annotations on that frame are
+  propagated. If triggered from an annotation, only the selected annotation is
+  propagated.
 
-### [SAM3 Segmentation](plugins/sam3_segmentation/)
+  - Scope: video only, within a single video
+  - Entry points: frame or annotation
+  - Controls: forward and backward propagation windows in seconds
+  - Tradeoff: uses OpenCV NanoTracker, which is lightweight and fast on many
+    machines but less robust on difficult motion, occlusion, or scale changes
+  - Maintainer: Lightly
+  - Install:
+    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/bbox_auto_propagation_nano_tracker/`
 
-Segments all instances matching a text prompt in a single image or across images in the current view. This is designed for dataset-wide prompt-based labeling workflows with class-like prompts such as `person`, `car`, or `dog`.
+  </details>
 
-- Scope: single image or images in the current view
-- Input: text prompt
-- Output: segmentation masks
-- Labels: the prompt text is used as the annotation class name
-- Requirement: Hugging Face access to `facebook/sam3`
-- Maintainer: Lightly
-- Install:
-  `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/sam3_segmentation/`
+- [SAM3 Segmentation](plugins/sam3_segmentation/)  
+  Segments all instances matching a text prompt in a single image or across the current view.
 
-### [LightlyTrain object detection inference](plugins/lightly_train_object_detection_inference/)
+  <details>
+  <summary>Details</summary>
 
-Runs LightlyTrain object detection inference on a single image or across images in the current view for auto-labeling. You can use built-in LightlyTrain models for quick bootstrapping or provide a path to your own LightlyTrain checkpoint.
+  This is designed for dataset-wide prompt-based labeling workflows with
+  class-like prompts such as `person`, `car`, or `dog`.
 
-- Scope: single image or images in the current view
-- Input: LightlyTrain model name or local path to a LightlyTrain checkpoint
-- Output: object detection annotations
-- Labels: class labels are read from the loaded model and created in the dataset if
-  they do not exist yet
-- Recommended models:
-  `dinov3/convnext-large-ltdetr-coco` for best performance,
-  `dinov3/vits16-ltdetr-coco` for a speed/quality balance,
-  `picodet-l-coco` for resource-constrained environments
-- Maintainer: Lightly
-- Install:
-  `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/lightly_train_object_detection_inference/`
+  - Scope: single image or images in the current view
+  - Input: text prompt
+  - Output: segmentation masks
+  - Labels: the prompt text is used as the annotation class name
+  - Requirement: Hugging Face access to `facebook/sam3`
+  - Maintainer: Lightly
+  - Install:
+    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/sam3_segmentation/`
+
+  </details>
+
+- [LightlyTrain object detection inference](plugins/lightly_train_object_detection_inference/)  
+  Runs LightlyTrain object detection inference on one image or the current view for auto-labeling.
+
+  <details>
+  <summary>Details</summary>
+
+  You can use built-in LightlyTrain models for quick bootstrapping or provide a
+  path to your own LightlyTrain checkpoint.
+
+  - Scope: single image or images in the current view
+  - Input: LightlyTrain model name or local path to a LightlyTrain checkpoint
+  - Output: object detection annotations
+  - Labels: class labels are read from the loaded model and created in the
+    dataset if they do not exist yet
+  - Recommended models:
+    `dinov3/convnext-large-ltdetr-coco` for best performance,
+    `dinov3/vits16-ltdetr-coco` for a speed/quality balance,
+    `picodet-l-coco` for resource-constrained environments
+  - Maintainer: Lightly
+  - Install:
+    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/lightly_train_object_detection_inference/`
+
+  </details>
 
 ## Contributing Plugins
 
