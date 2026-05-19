@@ -8,15 +8,7 @@ Each plugin in this repository is packaged independently, installs in a single c
 
 <p align="center"><em>SAM3 Segmentation Plugin</em></p>
 
-## Installing a Plugin
-
-Choose a plugin from the list below and install it directly from this repository by pointing `pip` at the plugin subdirectory:
-
-```bash
-pip install "git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/<plugin-directory>"
-```
-
-After installation, the plugin is available in Lightly Studio automatically.
+Each plugin entry below includes the exact copy-paste install command. After installation, the plugin is available in Lightly Studio automatically.
 
 ## Available Plugins
 
