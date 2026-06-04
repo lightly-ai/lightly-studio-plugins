@@ -6,7 +6,9 @@ requires-python = ">=3.10"
 dependencies = [
     "lightly_studio>=0.4.13",
     "torch",
-    "transformers>=4.57.2",
+    # For why to avoid transformers 5.10, see
+    # https://github.com/huggingface/transformers/issues/46402
+    "transformers>=4.57.2,<5.10",
     "Pillow",
     "numpy",
     "huggingface-hub>=0.34",
