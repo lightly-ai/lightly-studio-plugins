@@ -21,3 +21,11 @@ description = "Runs LightlyTrain object detection inference on a single image or
 source = "local:plugins/lightly_train_object_detection_inference"
 maintainer = "lightly"
 tags = ["auto-labeling", "object-detection", "inference"]
+
+[[plugins]]
+id = "lightly_plugins_kitti_export"
+name = "KITTI export"
+description = "Exports KITTI object-detection label files"
+source = "local:plugins/kitti_export"
+maintainer = "lightly"
+tags = ["export", "object-detection", "kitti"]
