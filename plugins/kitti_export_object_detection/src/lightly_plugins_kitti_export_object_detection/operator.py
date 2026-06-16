@@ -178,6 +178,3 @@ def _get_kitti_filename(*, image_filename: str, images_root: Path | None) -> str
         return image_path.relative_to(images_root).as_posix()
     except ValueError:
         return image_path.name
-
-
-operator_registry.register(operator=ExportKittiOperator())
