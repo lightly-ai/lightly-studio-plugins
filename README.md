@@ -103,7 +103,7 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
   </details>
 
-- [KITTI export](plugins/kitti_export/)  
+- [KITTI object detection export](plugins/kitti_export_object_detection/)  
   Exports KITTI object-detection label files.
 
   <details>
@@ -118,7 +118,7 @@ Each plugin entry below includes the exact copy-paste install command. After ins
   - Output: KITTI object-detection label files
   - Maintainer: Lightly
   - Install:
-    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/kitti_export/`
+    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/kitti_export_object_detection/`
 
   </details>
 
