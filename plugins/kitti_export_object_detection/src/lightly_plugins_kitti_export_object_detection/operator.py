@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -81,7 +81,9 @@ class KittiObjectDetectionInput(LightlyStudioObjectDetectionInput):
                     width=label.image.width,
                     height=label.image.height,
                 ),
-                objects=label.objects,
+                objects=[
+                    _normalize_kitti_object_class_name(obj) for obj in label.objects
+                ],
             )
             for label in super().get_labels()
         ]
@@ -178,3 +180,13 @@ def _get_kitti_filename(*, image_filename: str, images_root: Path | None) -> str
         return image_path.relative_to(images_root).as_posix()
     except ValueError:
         return image_path.name
+
+
+def _normalize_kitti_object_class_name(obj: Any) -> Any:
+    """Replace spaces in the exported KITTI class token."""
+    if " " not in obj.category.name:
+        return obj
+    return replace(
+        obj,
+        category=replace(obj.category, name=obj.category.name.replace(" ", "_")),
+    )
