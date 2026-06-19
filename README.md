@@ -103,6 +103,25 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
   </details>
 
+- [KITTI object detection export](plugins/kitti_export_object_detection/)  
+  Exports KITTI object-detection label files.
+
+  <details>
+  <summary>Details</summary>
+
+  The plugin writes KITTI `.txt` label files for the current filtered image
+  view. Nested image folder structure is preserved in label filenames when
+  exporting images from multiple folders.
+
+  - Scope: images in the current view
+  - Input: output folder
+  - Output: KITTI object-detection label files
+  - Maintainer: Lightly
+  - Install:
+    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/kitti_export_object_detection/`
+
+  </details>
+
 ## Contributing Plugins
 
 1. Create a new directory under `plugins/`:
