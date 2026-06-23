@@ -81,7 +81,7 @@ class YoloObjectDetectionOperator(BaseOperator):
         parameters: dict[str, Any],
     ) -> OperatorResult:
         """Execute the operator with the given parameters."""
-        from ultralytics import YOLO
+        from ultralytics import YOLO  # type: ignore[attr-defined]
 
         model_path = str(parameters.get(PARAM_MODEL, DEFAULT_MODEL))
         try:
