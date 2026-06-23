@@ -162,8 +162,8 @@ class YoloObjectDetectionOperator(BaseOperator):
                         parent_sample_id=image_entry.sample_id,
                         x=round(x_center - w / 2),
                         y=round(y_center - h / 2),
-                        width=round(w),
-                        height=round(h),
+                        width=max(1, round(w)),
+                        height=max(1, round(h)),
                         confidence=float(box.conf),
                     )
                 )
