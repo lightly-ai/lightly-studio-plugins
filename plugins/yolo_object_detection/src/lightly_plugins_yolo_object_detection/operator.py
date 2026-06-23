@@ -38,6 +38,8 @@ DEFAULT_CONFIDENCE = 0.25
 PARAM_MODEL = "model_path"
 PARAM_CONFIDENCE = "confidence"
 
+_WRITE_BATCH_SIZE = 100
+
 
 @dataclass
 class YoloObjectDetectionOperator(BaseOperator):
@@ -130,8 +132,9 @@ class YoloObjectDetectionOperator(BaseOperator):
                 message="No samples found for current view.",
             )
 
+        collection_name = f"yolo_auto_label__{model_path}"
         annotations_to_create: list[AnnotationCreate] = []
-        for image_entry in samples:
+        for i, image_entry in enumerate(samples, start=1):
             try:
                 results = model(
                     image_entry.file_path_abs, conf=confidence, verbose=False
@@ -165,12 +168,21 @@ class YoloObjectDetectionOperator(BaseOperator):
                     )
                 )
 
+            if i % _WRITE_BATCH_SIZE == 0 and annotations_to_create:
+                annotation_resolver.create_many(
+                    session=session,
+                    parent_collection_id=context.collection_id,
+                    annotations=annotations_to_create,
+                    collection_name=collection_name,
+                )
+                annotations_to_create = []
+
         if annotations_to_create:
             annotation_resolver.create_many(
                 session=session,
                 parent_collection_id=context.collection_id,
                 annotations=annotations_to_create,
-                collection_name=f"yolo_auto_label__{model_path}",
+                collection_name=collection_name,
             )
 
         return OperatorResult(
