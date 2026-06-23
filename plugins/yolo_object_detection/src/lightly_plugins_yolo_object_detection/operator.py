@@ -115,7 +115,9 @@ class YoloObjectDetectionOperator(BaseOperator):
 
         annotations_to_create: list[AnnotationCreate] = []
         for image_entry in samples:
-            results = model(image_entry.file_path_abs, conf=confidence, verbose=False)[0]
+            results = model(image_entry.file_path_abs, conf=confidence, verbose=False)[
+                0
+            ]
             for box in results.boxes:
                 category_id = int(box.cls)
                 label_id = label_map.get(category_id)
