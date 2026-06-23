@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -28,6 +29,8 @@ from lightly_studio.resolvers import (
 )
 from lightly_studio.resolvers.image_filter import ImageFilter
 from lightly_studio.resolvers.sample_resolver.sample_filter import SampleFilter
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "yolov8n.pt"
 DEFAULT_CONFIDENCE = 0.25
@@ -79,7 +82,14 @@ class YoloObjectDetectionOperator(BaseOperator):
         from ultralytics import YOLO
 
         model_path = str(parameters.get(PARAM_MODEL, DEFAULT_MODEL))
-        confidence = float(parameters.get(PARAM_CONFIDENCE, DEFAULT_CONFIDENCE))
+        try:
+            confidence = float(parameters.get(PARAM_CONFIDENCE, DEFAULT_CONFIDENCE))
+        except (TypeError, ValueError) as e:
+            logger.error("Invalid confidence value: %s", e)
+            return OperatorResult(
+                success=False,
+                message=f"Invalid confidence value: {e}",
+            )
 
         if not 0.0 <= confidence <= 1.0:
             return OperatorResult(
@@ -87,7 +97,14 @@ class YoloObjectDetectionOperator(BaseOperator):
                 message="confidence must be between 0 and 1",
             )
 
-        model = YOLO(model_path)
+        try:
+            model = YOLO(model_path)
+        except Exception as e:
+            logger.error("Failed to load YOLO model '%s': %s", model_path, e)
+            return OperatorResult(
+                success=False,
+                message=f"Failed to load YOLO model '{model_path}': {e}",
+            )
         label_map = _get_or_create_label_map(
             session=session,
             root_collection_id=context.collection_id,
@@ -115,9 +132,20 @@ class YoloObjectDetectionOperator(BaseOperator):
 
         annotations_to_create: list[AnnotationCreate] = []
         for image_entry in samples:
-            results = model(image_entry.file_path_abs, conf=confidence, verbose=False)[
-                0
-            ]
+            try:
+                results = model(
+                    image_entry.file_path_abs, conf=confidence, verbose=False
+                )[0]
+            except Exception as e:
+                logger.error(
+                    "Failed to run inference on '%s': %s",
+                    image_entry.file_path_abs,
+                    e,
+                )
+                return OperatorResult(
+                    success=False,
+                    message=f"Failed to run inference on '{image_entry.file_path_abs}': {e}",
+                )
             for box in results.boxes:
                 category_id = int(box.cls)
                 label_id = label_map.get(category_id)
