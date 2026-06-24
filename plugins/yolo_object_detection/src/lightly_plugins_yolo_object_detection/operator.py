@@ -134,6 +134,7 @@ class YoloObjectDetectionOperator(BaseOperator):
             )
 
         annotations_to_create: list[AnnotationCreate] = []
+        total_annotations_created = 0
         for i, image_entry in enumerate(samples, start=1):
             try:
                 results = model(
@@ -169,25 +170,27 @@ class YoloObjectDetectionOperator(BaseOperator):
                 )
 
             if i % _WRITE_BATCH_SIZE == 0 and annotations_to_create:
-                annotation_resolver.create_many(
+                created = annotation_resolver.create_many(
                     session=session,
                     parent_collection_id=context.collection_id,
                     annotations=annotations_to_create,
                     collection_name=collection_name,
                 )
+                total_annotations_created += len(created)
                 annotations_to_create = []
 
         if annotations_to_create:
-            annotation_resolver.create_many(
+            created = annotation_resolver.create_many(
                 session=session,
                 parent_collection_id=context.collection_id,
                 annotations=annotations_to_create,
                 collection_name=collection_name,
             )
+            total_annotations_created += len(created)
 
         return OperatorResult(
             success=True,
-            message=f"Auto-labeled {len(samples)} samples.",
+            message=f"Auto-labeled {len(samples)} samples with {total_annotations_created} annotations.",
         )
 
 
