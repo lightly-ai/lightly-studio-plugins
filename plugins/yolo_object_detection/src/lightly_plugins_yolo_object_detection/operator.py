@@ -37,6 +37,7 @@ DEFAULT_CONFIDENCE = 0.25
 
 PARAM_MODEL = "model_path"
 PARAM_CONFIDENCE = "confidence"
+PARAM_ANNOTATION_SOURCE = "annotation_source"
 
 _WRITE_BATCH_SIZE = 100
 
@@ -66,6 +67,11 @@ class YoloObjectDetectionOperator(BaseOperator):
                 default=DEFAULT_CONFIDENCE,
                 description="Minimum confidence threshold for keeping a prediction.",
             ),
+            StringParameter(
+                name=PARAM_ANNOTATION_SOURCE,
+                required=False,
+                description="Target annotation source name where predictions will be stored. Defaults to yolo_auto_label__{model_path}.",
+            ),
         ]
 
     @property
@@ -84,6 +90,9 @@ class YoloObjectDetectionOperator(BaseOperator):
         from ultralytics import YOLO  # type: ignore[attr-defined]
 
         model_path = str(parameters.get(PARAM_MODEL, DEFAULT_MODEL))
+        collection_name = str(
+            parameters.get(PARAM_ANNOTATION_SOURCE, f"yolo_auto_label__{model_path}")
+        )
         try:
             confidence = float(parameters.get(PARAM_CONFIDENCE, DEFAULT_CONFIDENCE))
         except (TypeError, ValueError) as e:
@@ -132,7 +141,6 @@ class YoloObjectDetectionOperator(BaseOperator):
                 message="No samples found for current view.",
             )
 
-        collection_name = f"yolo_auto_label__{model_path}"
         annotations_to_create: list[AnnotationCreate] = []
         for i, image_entry in enumerate(samples, start=1):
             try:
