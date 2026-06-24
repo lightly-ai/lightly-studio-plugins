@@ -89,8 +89,11 @@ class YoloObjectDetectionOperator(BaseOperator):
     ) -> OperatorResult:
         """Execute the operator with the given parameters."""
         model_path = str(parameters.get(PARAM_MODEL, DEFAULT_MODEL))
-        collection_name = str(
-            parameters.get(PARAM_ANNOTATION_SOURCE, f"yolo_auto_label__{model_path}")
+        _annotation_source = parameters.get(PARAM_ANNOTATION_SOURCE)
+        collection_name = (
+            str(_annotation_source).strip()
+            if _annotation_source is not None and str(_annotation_source).strip()
+            else f"yolo_auto_label__{model_path}"
         )
         confidence = float(parameters.get(PARAM_CONFIDENCE, DEFAULT_CONFIDENCE))
 
