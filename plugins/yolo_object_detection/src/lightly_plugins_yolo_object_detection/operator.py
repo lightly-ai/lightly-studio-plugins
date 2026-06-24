@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlmodel import Session
+from ultralytics import YOLO  # type: ignore[attr-defined]
 
 from lightly_studio.models.annotation.annotation_base import (
     AnnotationCreate,
@@ -87,8 +88,6 @@ class YoloObjectDetectionOperator(BaseOperator):
         parameters: dict[str, Any],
     ) -> OperatorResult:
         """Execute the operator with the given parameters."""
-        from ultralytics import YOLO  # type: ignore[attr-defined]
-
         model_path = str(parameters.get(PARAM_MODEL, DEFAULT_MODEL))
         collection_name = str(
             parameters.get(PARAM_ANNOTATION_SOURCE, f"yolo_auto_label__{model_path}")
