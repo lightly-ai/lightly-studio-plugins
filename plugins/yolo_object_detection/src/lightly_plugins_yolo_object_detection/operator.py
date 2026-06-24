@@ -92,14 +92,7 @@ class YoloObjectDetectionOperator(BaseOperator):
         collection_name = str(
             parameters.get(PARAM_ANNOTATION_SOURCE, f"yolo_auto_label__{model_path}")
         )
-        try:
-            confidence = float(parameters.get(PARAM_CONFIDENCE, DEFAULT_CONFIDENCE))
-        except (TypeError, ValueError) as e:
-            logger.error("Invalid confidence value: %s", e)
-            return OperatorResult(
-                success=False,
-                message=f"Invalid confidence value: {e}",
-            )
+        confidence = float(parameters.get(PARAM_CONFIDENCE, DEFAULT_CONFIDENCE))
 
         if not 0.0 <= confidence <= 1.0:
             return OperatorResult(
