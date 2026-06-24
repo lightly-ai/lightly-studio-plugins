@@ -103,6 +103,28 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
   </details>
 
+- [YOLO object detection](plugins/yolo_object_detection/)  
+  Runs YOLO inference and adds bounding box annotations to unlabeled images.
+
+  <details>
+  <summary>Details</summary>
+
+  Uses [Ultralytics YOLO](https://docs.ultralytics.com/) models for object detection auto-labeling.
+  Supports any Ultralytics model name or a path to a custom checkpoint.
+
+  - Scope: single image or images in the current view
+  - Input: YOLO model name or local path to a YOLO checkpoint
+  - Output: object detection annotations
+  - Labels: class labels are read from the loaded model and created in the
+    dataset if they do not exist yet
+  - Recommended models:
+    `yolov8n.pt` for speed, `yolov8s.pt` or `yolov8m.pt` for better accuracy
+  - Maintainer: Lightly
+  - Install:
+    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/yolo_object_detection/`
+
+  </details>
+
 - [KITTI object detection export](plugins/kitti_export_object_detection/)  
   Exports KITTI object-detection label files.
 
