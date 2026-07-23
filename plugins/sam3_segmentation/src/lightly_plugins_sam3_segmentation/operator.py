@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MODEL_ID = "facebook/sam3"
 _SEGMENTATION_ANNOTATION_TYPE: AnnotationType = cast(
     AnnotationType,
-    getattr(AnnotationType, "SEGMENTATION_MASK", None)
+    getattr(AnnotationType, "OBJECT_DETECTION", None)
     or getattr(AnnotationType, "INSTANCE_SEGMENTATION"),
 )
 
@@ -64,7 +64,7 @@ def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) ->
 class SAM3SegmentationOperator(BaseOperator):
     """Instance segmentation using SAM3 driven by a text prompt."""
 
-    name: str = "SAM3 Segmentation"
+    name: str = "SAM3 - OD"
     description: str = (
         "Automatic instance segmentation using SAM3 (facebook/sam3). "
         "Requires HuggingFace access — authenticate with `hf auth login` first."
@@ -141,6 +141,7 @@ class SAM3SegmentationOperator(BaseOperator):
         context: ExecutionContext,
         parameters: dict[str, Any],
     ) -> OperatorResult:
+        print("Executing SAM3SegmentationOperator with parameters:", parameters)
         model_id: str = parameters.get("model_id", _DEFAULT_MODEL_ID)
         prompt_value = parameters.get("prompt")
         if prompt_value is None:
@@ -239,14 +240,13 @@ class SAM3SegmentationOperator(BaseOperator):
             annotation_creates.append(
                 AnnotationCreate(
                     annotation_label_id=label_id,
-                    annotation_type=_SEGMENTATION_ANNOTATION_TYPE,
+                    annotation_type=AnnotationType.OBJECT_DETECTION,
                     parent_sample_id=sample.sample_id,
                     confidence=entry["score"],
                     x=x,
                     y=y,
                     width=w,
                     height=h,
-                    segmentation_mask=entry["rle"],
                 )
             )
 
