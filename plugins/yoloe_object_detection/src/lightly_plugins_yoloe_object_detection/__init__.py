@@ -1,0 +1,1 @@
+""" YOLOE Object Detection Plugin for LightlyStudio. """
