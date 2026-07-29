@@ -173,7 +173,7 @@ def _result(*, tally: CaptionTally, truncated: int) -> OperatorResult:
                 f"First error: {tally.first_error}"
             ),
         )
-    parts = [f"Captioned {tally.stored} image(s)."]
+    parts = [f"Captioned {tally.stored} image(s) in {tally.elapsed_s:.1f}s."]
     if tally.failed:
         parts.append(f"{tally.failed} failed (first error: {tally.first_error}).")
     if truncated:

@@ -94,12 +94,20 @@ lightly-studio-captioning-20260729T150312Z-a1b2c3
 
 The prefix separates these requests from other tools sharing the API key, the UTC
 timestamp is the run's start time, and the random suffix keeps two runs started in the
-same second apart. The id is written to the server log when a run starts:
+same second apart. The id and the run timings are written to the server log:
 
 ```text
-INFO Captioning 200 image(s) with qwen/qwen3-vl-8b-instruct as OpenRouter session
-     'lightly-studio-captioning-20260729T150312Z-a1b2c3'.
+INFO Captioning 200 image(s) with qwen/qwen3-vl-8b-instruct at concurrency 16 as
+     OpenRouter session 'lightly-studio-captioning-20260729T150312Z-a1b2c3'.
+INFO Captioned 198/200 image(s) in 41.3s (4.8 image/s). Request time median 0.9s,
+     slowest 3.4s.
 ```
+
+Read those two numbers together when tuning. Throughput should land near
+`max_concurrency / median request time` — 16 / 0.9 s ≈ 17 image/s above. Getting far less
+than that means something other than the model is the bottleneck, usually retries after
+rate limiting. If the median request time itself is high, the model or provider is slow, so
+try a different `model` or `provider_sort`. Per-image timings are available at `DEBUG`.
 
 OpenRouter also treats `session_id` as a sticky routing key, preferring to send a
 session's requests to one provider. That costs nothing here, because separate images

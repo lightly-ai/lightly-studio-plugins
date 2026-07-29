@@ -9,10 +9,12 @@ from __future__ import annotations
 import concurrent.futures
 import contextlib
 import logging
+import statistics
+import time
 import uuid
 from collections.abc import Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -64,19 +66,37 @@ class CaptionJob:
     file_path_abs: str
 
 
+@dataclass(frozen=True)
+class _CaptionResult:
+    """One finished caption and how long its request took.
+
+    Attributes:
+        text: The caption returned by the model.
+        duration_s: Time spent encoding the image and awaiting the response.
+    """
+
+    text: str
+    duration_s: float
+
+
 @dataclass
 class CaptionTally:
-    """Running counts of a captioning run.
+    """Running counts and timings of a captioning run.
 
     Attributes:
         stored: Number of captions written to the database.
         failed: Number of images that could not be captioned.
         first_error: Message of the first failure, used to explain the run to the user.
+        elapsed_s: Wall-clock duration of the whole run in seconds.
+        request_durations_s: Duration of each successful request in seconds. Failures are
+            left out because a timed-out request only measures the timeout.
     """
 
     stored: int = 0
     failed: int = 0
     first_error: str | None = None
+    elapsed_s: float = 0.0
+    request_durations_s: list[float] = field(default_factory=list)
 
 
 def caption_images(
@@ -97,17 +117,19 @@ def caption_images(
         api_key: OpenRouter API key.
 
     Returns:
-        The counts of stored and failed captions.
+        The counts and timings of the run.
     """
     tally = CaptionTally()
     pending: list[CaptionCreate] = []
     session_id = new_session_id()
     logger.info(
-        "Captioning %d image(s) with %s as OpenRouter session '%s'.",
+        "Captioning %d image(s) with %s at concurrency %d as OpenRouter session '%s'.",
         len(jobs),
         settings.model,
+        settings.max_concurrency,
         session_id,
     )
+    started_at = time.monotonic()
     with contextlib.ExitStack() as stack:
         client = stack.enter_context(_build_client(settings=settings))
         pool = stack.enter_context(_build_pool(settings=settings))
@@ -121,10 +143,12 @@ def caption_images(
         )
         for future in concurrent.futures.as_completed(futures):
             job = futures[future]
-            text = _caption_or_record_failure(future=future, job=job, tally=tally)
-            if text is None:
+            result = _caption_or_record_failure(future=future, job=job, tally=tally)
+            if result is None:
                 continue
-            pending.append(CaptionCreate(parent_sample_id=job.sample_id, text=text))
+            pending.append(
+                CaptionCreate(parent_sample_id=job.sample_id, text=result.text)
+            )
             if len(pending) >= _DB_FLUSH_BATCH_SIZE:
                 tally.stored += store_captions(
                     session=session, collection_id=collection_id, captions=pending
@@ -133,6 +157,8 @@ def caption_images(
     tally.stored += store_captions(
         session=session, collection_id=collection_id, captions=pending
     )
+    tally.elapsed_s = time.monotonic() - started_at
+    _log_summary(tally=tally, total=len(jobs))
     return tally
 
 
@@ -186,7 +212,7 @@ def _submit(
     settings: CaptionSettings,
     api_key: str,
     session_id: str,
-) -> dict[Future[str], CaptionJob]:
+) -> dict[Future[_CaptionResult], CaptionJob]:
     """Submit every job and return a mapping from future back to its job.
 
     The mapping is needed because a failure has to be reported against the image that
@@ -231,7 +257,7 @@ def _caption_one(
     client: httpx.Client,
     config: OpenRouterRequestConfig,
     max_image_edge: int,
-) -> str:
+) -> _CaptionResult:
     """Encode one image and return its caption. Runs in a worker thread.
 
     Encoding happens here rather than up front so that the JPEG bytes of all images are
@@ -241,32 +267,61 @@ def _caption_one(
         ImageEncodingError: If the image cannot be read or encoded.
         OpenRouterError: If OpenRouter returns no usable caption.
     """
+    started_at = time.monotonic()
     data_url = image_encoding.encode_image_as_data_url(
         file_path=job.file_path_abs,
         max_edge=max_image_edge,
         jpeg_quality=_JPEG_QUALITY,
     )
-    return openrouter_client.request_caption(
+    text = openrouter_client.request_caption(
         client=client, config=config, image_data_url=data_url
     )
+    return _CaptionResult(text=text, duration_s=time.monotonic() - started_at)
 
 
 def _caption_or_record_failure(
-    *, future: Future[str], job: CaptionJob, tally: CaptionTally
-) -> str | None:
-    """Return the caption of a finished job, or None after recording its failure.
+    *, future: Future[_CaptionResult], job: CaptionJob, tally: CaptionTally
+) -> _CaptionResult | None:
+    """Return the result of a finished job, or None after recording its failure.
 
     Failures are isolated per image so that one unreadable file or one rejected request
     does not abort the whole run.
     """
     try:
-        return future.result()
+        result = future.result()
     except (OpenRouterError, ImageEncodingError) as exc:
         tally.failed += 1
         tally.first_error = tally.first_error or str(exc)
         logger.warning("Captioning failed for %s: %s", job.file_path_abs, exc)
+        return None
     except Exception:
         tally.failed += 1
         tally.first_error = tally.first_error or "Unexpected error, see the server log."
         logger.exception("Captioning failed for %s.", job.file_path_abs)
-    return None
+        return None
+    tally.request_durations_s.append(result.duration_s)
+    logger.debug("Captioned %s in %.1fs.", job.file_path_abs, result.duration_s)
+    return result
+
+
+def _log_summary(*, tally: CaptionTally, total: int) -> None:
+    """Log how long the run took and how fast the requests were.
+
+    Both numbers are needed to tell a slow provider apart from too little concurrency: if
+    the median request is fast but throughput is far below `concurrency / median`, the run
+    is bottlenecked somewhere other than the model.
+    """
+    throughput = tally.stored / tally.elapsed_s if tally.elapsed_s > 0 else 0.0
+    summary = (
+        f"Captioned {tally.stored}/{total} image(s) in {tally.elapsed_s:.1f}s "
+        f"({throughput:.1f} image/s)"
+    )
+    if not tally.request_durations_s:
+        logger.info("%s.", summary)
+        return
+    logger.info(
+        "%s. Request time median %.1fs, slowest %.1fs.",
+        summary,
+        statistics.median(tally.request_durations_s),
+        max(tally.request_durations_s),
+    )
