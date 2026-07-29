@@ -37,3 +37,11 @@ description = "Exports KITTI object-detection label files"
 source = "local:plugins/kitti_export_object_detection"
 maintainer = "lightly"
 tags = ["export", "object-detection", "kitti"]
+
+[[plugins]]
+id = "lightly_plugins_openrouter_image_captioning"
+name = "OpenRouter Image Captioning"
+description = "Generates image captions with a vision model served through OpenRouter"
+source = "local:plugins/openrouter_image_captioning"
+maintainer = "lightly"
+tags = ["captioning", "vlm", "openrouter", "auto-labeling"]
