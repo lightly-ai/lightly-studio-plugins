@@ -266,6 +266,11 @@ class AutoPropagateOperator(BaseOperator):
         """Propagate bounding box annotations using NanoTracker."""
         backward_seconds: float = parameters.get("backward_seconds", 0.0) or 0.0
         forward_seconds: float = parameters.get("forward_seconds", 0.0) or 0.0
+        if backward_seconds <= 0 and forward_seconds <= 0:
+            return OperatorResult(
+                success=False,
+                message="Set backward_seconds or forward_seconds to a value above 0.",
+            )
 
         resolved = self._resolve_source(session=session, context=context)
         if isinstance(resolved, OperatorResult):
@@ -315,12 +320,8 @@ class AutoPropagateOperator(BaseOperator):
             f.frame_number: f for f in all_frames
         }
 
-        max_backward_frames = (
-            int(backward_seconds * video.fps) if backward_seconds > 0 else None
-        )
-        max_forward_frames = (
-            int(forward_seconds * video.fps) if forward_seconds > 0 else None
-        )
+        max_backward_frames = max(0, int(backward_seconds * video.fps))
+        max_forward_frames = max(0, int(forward_seconds * video.fps))
 
         cap = cv2.VideoCapture(video.file_path_abs)
         if not cap.isOpened():
@@ -372,8 +373,8 @@ def _track_all_directions(
     frame_by_number: dict[int, VideoFrameTable],
     backbone_path: Path,
     neck_head_path: Path,
-    max_forward_frames: int | None = None,
-    max_backward_frames: int | None = None,
+    max_forward_frames: int,
+    max_backward_frames: int,
 ) -> list[AnnotationCreate]:
     """Track bounding boxes forward and backward from the source frame."""
     all_frame_numbers = sorted(frame_by_number.keys())
@@ -385,9 +386,9 @@ def _track_all_directions(
 
     new_annotations = []
 
-    forward_frames = [fn for fn in all_frame_numbers if fn > frame_number]
-    if max_forward_frames is not None:
-        forward_frames = forward_frames[:max_forward_frames]
+    forward_frames = [fn for fn in all_frame_numbers if fn > frame_number][
+        :max_forward_frames
+    ]
     if forward_frames:
         new_annotations.extend(
             _track_direction(
@@ -401,9 +402,9 @@ def _track_all_directions(
             )
         )
 
-    backward_frames = [fn for fn in reversed(all_frame_numbers) if fn < frame_number]
-    if max_backward_frames is not None:
-        backward_frames = backward_frames[:max_backward_frames]
+    backward_frames = [fn for fn in reversed(all_frame_numbers) if fn < frame_number][
+        :max_backward_frames
+    ]
     if backward_frames:
         new_annotations.extend(
             _track_direction(
