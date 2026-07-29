@@ -99,7 +99,7 @@ class AutoPropagateOperator(BaseOperator):
             FloatParameter(
                 name="forward_seconds",
                 required=False,
-                default=2.0,
+                default=0.0,
                 description="Seconds to propagate forward from the source frame (0 = disabled)",
             ),
         ]
@@ -265,7 +265,7 @@ class AutoPropagateOperator(BaseOperator):
     ) -> OperatorResult:
         """Propagate bounding box annotations using NanoTracker."""
         backward_seconds: float = parameters.get("backward_seconds", 0.0) or 0.0
-        forward_seconds: float = parameters.get("forward_seconds", 2.0) or 0.0
+        forward_seconds: float = parameters.get("forward_seconds", 0.0) or 0.0
         if backward_seconds <= 0 and forward_seconds <= 0:
             return OperatorResult(
                 success=False,
