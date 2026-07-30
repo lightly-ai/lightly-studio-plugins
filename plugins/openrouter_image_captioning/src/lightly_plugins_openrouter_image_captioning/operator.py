@@ -18,7 +18,6 @@ from sqlmodel import Session
 from lightly_plugins_openrouter_image_captioning import (
     captioning,
     image_filters,
-    parameter_values,
     settings,
 )
 from lightly_plugins_openrouter_image_captioning.captioning import (
@@ -91,7 +90,7 @@ def _run(
 
     try:
         caption_settings = settings.read_settings(parameters=parameters)
-    except parameter_values.ParameterError as exc:
+    except settings.ParameterError as exc:
         return OperatorResult(success=False, message=str(exc))
 
     resolution = image_filters.resolve_image_filter(

@@ -14,8 +14,6 @@ from lightly_studio.plugins.parameter import (
     StringParameter,
 )
 
-from lightly_plugins_openrouter_image_captioning import parameter_values
-
 API_KEY_ENV_VAR = "OPENROUTER_API_KEY"
 MODELS_URL = "https://openrouter.ai/models"
 
@@ -49,9 +47,12 @@ _DEFAULT_MAX_RETRIES = 3
 
 # An empty choice means "let OpenRouter decide", keeping its default load balancing.
 _PROVIDER_SORTS = ("", "throughput", "latency", "price")
-# Below this an image carries too little detail to caption; 0 means "do not resize".
+# Below 64 an image carries too little detail to caption; 0 means "do not resize".
 _MIN_USEFUL_IMAGE_EDGE = 64
-_MAX_IMAGE_EDGE = 4096
+
+
+class ParameterError(ValueError):
+    """Raised when a supplied parameter value cannot be used."""
 
 
 @dataclass(frozen=True)
@@ -89,92 +90,6 @@ class CaptionSettings:
 
 def build_parameters() -> list[BaseParameter]:
     """Return the operator parameters in the order they are shown in the GUI."""
-    return [
-        *_model_parameters(),
-        *_selection_parameters(),
-        *_performance_parameters(),
-    ]
-
-
-def read_settings(*, parameters: Mapping[str, Any]) -> CaptionSettings:
-    """Coerce and validate the raw parameter dict.
-
-    Args:
-        parameters: The unvalidated parameters supplied by the caller.
-
-    Returns:
-        The validated settings.
-
-    Raises:
-        ParameterError: If a value cannot be used.
-    """
-    return CaptionSettings(
-        model=parameter_values.get_str(
-            parameters=parameters, name=PARAM_MODEL, default=_DEFAULT_MODEL
-        ),
-        prompt=parameter_values.get_str(
-            parameters=parameters, name=PARAM_PROMPT, default=_DEFAULT_PROMPT
-        ),
-        base_url=parameter_values.get_str(
-            parameters=parameters, name=PARAM_BASE_URL, default=_DEFAULT_BASE_URL
-        ),
-        max_tokens=parameter_values.get_int(
-            parameters=parameters,
-            name=PARAM_MAX_TOKENS,
-            default=_DEFAULT_MAX_TOKENS,
-            minimum=16,
-            maximum=4096,
-        ),
-        temperature=parameter_values.get_float(
-            parameters=parameters,
-            name=PARAM_TEMPERATURE,
-            default=_DEFAULT_TEMPERATURE,
-            minimum=0.0,
-            maximum=2.0,
-        ),
-        skip_captioned=parameter_values.get_bool(
-            parameters=parameters, name=PARAM_SKIP_CAPTIONED, default=True
-        ),
-        max_samples=parameter_values.get_int(
-            parameters=parameters,
-            name=PARAM_MAX_SAMPLES,
-            default=_DEFAULT_MAX_SAMPLES,
-            minimum=0,
-            maximum=100_000,
-        ),
-        max_image_edge=_read_image_edge(parameters=parameters),
-        max_concurrency=parameter_values.get_int(
-            parameters=parameters,
-            name=PARAM_MAX_CONCURRENCY,
-            default=_DEFAULT_MAX_CONCURRENCY,
-            minimum=1,
-            maximum=64,
-        ),
-        provider_sort=parameter_values.get_choice(
-            parameters=parameters,
-            name=PARAM_PROVIDER_SORT,
-            default=_DEFAULT_PROVIDER_SORT,
-            allowed=_PROVIDER_SORTS,
-        ),
-        request_timeout=parameter_values.get_float(
-            parameters=parameters,
-            name=PARAM_REQUEST_TIMEOUT,
-            default=_DEFAULT_REQUEST_TIMEOUT,
-            minimum=1.0,
-            maximum=600.0,
-        ),
-        max_retries=parameter_values.get_int(
-            parameters=parameters,
-            name=PARAM_MAX_RETRIES,
-            default=_DEFAULT_MAX_RETRIES,
-            minimum=0,
-            maximum=10,
-        ),
-    )
-
-
-def _model_parameters() -> list[BaseParameter]:
-    """Return the parameters that select and steer the model."""
     return [
         StringParameter(
             name=PARAM_MODEL,
@@ -217,12 +132,6 @@ def _model_parameters() -> list[BaseParameter]:
                 "Sampling temperature. Use 0.0 for the most reproducible captions."
             ),
         ),
-    ]
-
-
-def _selection_parameters() -> list[BaseParameter]:
-    """Return the parameters that choose which images get captioned."""
-    return [
         BoolParameter(
             name=PARAM_SKIP_CAPTIONED,
             required=False,
@@ -240,12 +149,6 @@ def _selection_parameters() -> list[BaseParameter]:
                 "Maximum number of images to caption in one run. 0 means no limit."
             ),
         ),
-    ]
-
-
-def _performance_parameters() -> list[BaseParameter]:
-    """Return the parameters that trade speed, cost and reliability."""
-    return [
         IntParameter(
             name=PARAM_MAX_IMAGE_EDGE,
             required=False,
@@ -294,22 +197,131 @@ def _performance_parameters() -> list[BaseParameter]:
     ]
 
 
-def _read_image_edge(*, parameters: Mapping[str, Any]) -> int:
-    """Read the maximum image edge, which is either 0 (no resizing) or a usable size.
+def read_settings(*, parameters: Mapping[str, Any]) -> CaptionSettings:
+    """Coerce and range-check the raw parameter dict.
+
+    Args:
+        parameters: The unvalidated parameters supplied by the caller.
+
+    Returns:
+        The validated settings.
 
     Raises:
-        ParameterError: If the value is too small to caption meaningfully.
+        ParameterError: If a value cannot be used.
     """
-    value = parameter_values.get_int(
-        parameters=parameters,
-        name=PARAM_MAX_IMAGE_EDGE,
-        default=_DEFAULT_MAX_IMAGE_EDGE,
-        minimum=0,
-        maximum=_MAX_IMAGE_EDGE,
+    max_image_edge = _number(
+        parameters, PARAM_MAX_IMAGE_EDGE, _DEFAULT_MAX_IMAGE_EDGE, int, 0, 4096
     )
-    if 0 < value < _MIN_USEFUL_IMAGE_EDGE:
-        raise parameter_values.ParameterError(
+    if 0 < max_image_edge < _MIN_USEFUL_IMAGE_EDGE:
+        raise ParameterError(
             f"Parameter '{PARAM_MAX_IMAGE_EDGE}' must be at least "
             f"{_MIN_USEFUL_IMAGE_EDGE}, or 0 to upload images unresized."
+        )
+
+    provider_sort = _text(
+        parameters, PARAM_PROVIDER_SORT, _DEFAULT_PROVIDER_SORT, keep_blank=True
+    ).lower()
+    if provider_sort not in _PROVIDER_SORTS:
+        readable = ", ".join(f"'{option}'" for option in _PROVIDER_SORTS if option)
+        raise ParameterError(
+            f"Parameter '{PARAM_PROVIDER_SORT}' must be one of {readable}, or empty."
+        )
+
+    return CaptionSettings(
+        model=_text(parameters, PARAM_MODEL, _DEFAULT_MODEL),
+        prompt=_text(parameters, PARAM_PROMPT, _DEFAULT_PROMPT),
+        base_url=_text(parameters, PARAM_BASE_URL, _DEFAULT_BASE_URL),
+        max_tokens=_number(
+            parameters, PARAM_MAX_TOKENS, _DEFAULT_MAX_TOKENS, int, 16, 4096
+        ),
+        temperature=_number(
+            parameters, PARAM_TEMPERATURE, _DEFAULT_TEMPERATURE, float, 0.0, 2.0
+        ),
+        skip_captioned=_boolean(parameters, PARAM_SKIP_CAPTIONED, default=True),
+        max_samples=_number(
+            parameters, PARAM_MAX_SAMPLES, _DEFAULT_MAX_SAMPLES, int, 0, 100_000
+        ),
+        max_image_edge=max_image_edge,
+        max_concurrency=_number(
+            parameters, PARAM_MAX_CONCURRENCY, _DEFAULT_MAX_CONCURRENCY, int, 1, 64
+        ),
+        provider_sort=provider_sort,
+        request_timeout=_number(
+            parameters,
+            PARAM_REQUEST_TIMEOUT,
+            _DEFAULT_REQUEST_TIMEOUT,
+            float,
+            1.0,
+            600.0,
+        ),
+        max_retries=_number(
+            parameters, PARAM_MAX_RETRIES, _DEFAULT_MAX_RETRIES, int, 0, 10
+        ),
+    )
+
+
+def _text(
+    parameters: Mapping[str, Any],
+    name: str,
+    default: str,
+    *,
+    keep_blank: bool = False,
+) -> str:
+    """Read a string parameter, falling back to the default when absent.
+
+    Raises:
+        ParameterError: If the value is not text.
+    """
+    value = parameters.get(name)
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise ParameterError(f"Parameter '{name}' must be text.")
+    stripped = value.strip()
+    # A blank choice stays selectable, so it must not fall back to the default.
+    return stripped if keep_blank else (stripped or default)
+
+
+def _boolean(parameters: Mapping[str, Any], name: str, *, default: bool) -> bool:
+    """Read a boolean parameter.
+
+    Raises:
+        ParameterError: If the value is not a boolean.
+    """
+    value = parameters.get(name)
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ParameterError(f"Parameter '{name}' must be true or false.")
+    return value
+
+
+def _number(
+    parameters: Mapping[str, Any],
+    name: str,
+    default: Any,
+    kind: type,
+    minimum: Any,
+    maximum: Any,
+) -> Any:
+    """Read an int or float parameter and check it against its allowed range.
+
+    Raises:
+        ParameterError: If the value is not of the expected type or is out of range.
+    """
+    value = parameters.get(name)
+    if value is None:
+        value = default
+    # bool is a subclass of int, so reject it before the isinstance check below.
+    elif isinstance(value, bool):
+        raise ParameterError(f"Parameter '{name}' must be a number.")
+    elif kind is float and isinstance(value, int):
+        value = float(value)
+    elif not isinstance(value, kind):
+        expected = "a whole number" if kind is int else "a number"
+        raise ParameterError(f"Parameter '{name}' must be {expected}.")
+    if not minimum <= value <= maximum:
+        raise ParameterError(
+            f"Parameter '{name}' must be between {minimum} and {maximum}."
         )
     return value
