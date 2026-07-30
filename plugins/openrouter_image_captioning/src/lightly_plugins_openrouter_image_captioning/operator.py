@@ -24,7 +24,6 @@ from lightly_plugins_openrouter_image_captioning.captioning import (
     CaptionJob,
     CaptionTally,
 )
-from lightly_plugins_openrouter_image_captioning.settings import CaptionSettings
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +35,7 @@ _MISSING_KEY_MESSAGE = (
 _UNEXPECTED_ERROR_MESSAGE = (
     "OpenRouter captioning failed. Check the server log for details."
 )
+_EMPTY_MESSAGE = "No images to caption in the current view."
 
 
 @dataclass
@@ -93,20 +93,12 @@ def _run(
     except settings.ParameterError as exc:
         return OperatorResult(success=False, message=str(exc))
 
-    resolution = image_filters.resolve_image_filter(
-        context_filter=context.context_filter,
-        skip_captioned=caption_settings.skip_captioned,
+    image_filter = image_filters.resolve_image_filter(
+        context_filter=context.context_filter
     )
-    if resolution.conflict_message is not None:
-        return OperatorResult(success=True, message=resolution.conflict_message)
-
-    jobs = _find_jobs(
-        session=session, context=context, image_filter=resolution.image_filter
-    )
+    jobs = _find_jobs(session=session, context=context, image_filter=image_filter)
     if not jobs:
-        return OperatorResult(
-            success=True, message=_empty_message(caption_settings=caption_settings)
-        )
+        return OperatorResult(success=True, message=_EMPTY_MESSAGE)
 
     selected, truncated = _limit(jobs=jobs, max_samples=caption_settings.max_samples)
     tally = captioning.caption_images(
@@ -149,13 +141,6 @@ def _limit(
     if max_samples <= 0 or len(jobs) <= max_samples:
         return jobs, 0
     return jobs[:max_samples], len(jobs) - max_samples
-
-
-def _empty_message(*, caption_settings: CaptionSettings) -> str:
-    """Explain an empty selection, which is usually caused by skipping captioned images."""
-    if caption_settings.skip_captioned:
-        return "No images to caption in the current view. Every image already has a caption."
-    return "No images to caption in the current view."
 
 
 def _result(*, tally: CaptionTally, truncated: int) -> OperatorResult:

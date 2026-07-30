@@ -8,7 +8,6 @@ from typing import Any
 
 from lightly_studio.plugins.parameter import (
     BaseParameter,
-    BoolParameter,
     FloatParameter,
     IntParameter,
     StringParameter,
@@ -33,7 +32,6 @@ PARAM_MODEL = "model"
 PARAM_PROMPT = "prompt"
 PARAM_MAX_TOKENS = "max_tokens"
 PARAM_TEMPERATURE = "temperature"
-PARAM_SKIP_CAPTIONED = "skip_captioned"
 PARAM_MAX_SAMPLES = "max_samples"
 PARAM_MAX_IMAGE_EDGE = "max_image_edge"
 PARAM_MAX_CONCURRENCY = "max_concurrency"
@@ -66,7 +64,6 @@ class CaptionSettings:
         prompt: Instruction sent alongside each image.
         max_tokens: Upper bound on caption length in tokens.
         temperature: Sampling temperature.
-        skip_captioned: Whether images that already have a caption are skipped.
         max_samples: Maximum images per run, or 0 for no limit.
         max_image_edge: Longest edge in pixels after downscaling, or 0 to not resize.
         max_concurrency: Number of images captioned in parallel.
@@ -76,7 +73,6 @@ class CaptionSettings:
     prompt: str
     max_tokens: int
     temperature: float
-    skip_captioned: bool
     max_samples: int
     max_image_edge: int
     max_concurrency: int
@@ -115,15 +111,6 @@ def build_parameters() -> list[BaseParameter]:
             default=_DEFAULT_TEMPERATURE,
             description=(
                 "Sampling temperature. Use 0.0 for the most reproducible captions."
-            ),
-        ),
-        BoolParameter(
-            name=PARAM_SKIP_CAPTIONED,
-            required=False,
-            default=True,
-            description=(
-                "Skip images that already have at least one caption. Disable to add an "
-                "additional caption to every image."
             ),
         ),
         IntParameter(
@@ -187,7 +174,6 @@ def read_settings(*, parameters: Mapping[str, Any]) -> CaptionSettings:
         temperature=_number(
             parameters, PARAM_TEMPERATURE, _DEFAULT_TEMPERATURE, float, 0.0, 2.0
         ),
-        skip_captioned=_boolean(parameters, PARAM_SKIP_CAPTIONED, default=True),
         max_samples=_number(
             parameters, PARAM_MAX_SAMPLES, _DEFAULT_MAX_SAMPLES, int, 0, 100_000
         ),
@@ -210,20 +196,6 @@ def _text(parameters: Mapping[str, Any], name: str, default: str) -> str:
     if not isinstance(value, str):
         raise ParameterError(f"Parameter '{name}' must be text.")
     return value.strip() or default
-
-
-def _boolean(parameters: Mapping[str, Any], name: str, *, default: bool) -> bool:
-    """Read a boolean parameter.
-
-    Raises:
-        ParameterError: If the value is not a boolean.
-    """
-    value = parameters.get(name)
-    if value is None:
-        return default
-    if not isinstance(value, bool):
-        raise ParameterError(f"Parameter '{name}' must be true or false.")
-    return value
 
 
 def _number(

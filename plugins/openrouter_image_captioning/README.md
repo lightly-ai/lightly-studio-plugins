@@ -31,7 +31,6 @@ uv pip install "git+https://github.com/lightly-ai/lightly-studio-plugins.git#sub
 |---|---|---|---|
 | `model` | string | `"qwen/qwen3-vl-8b-instruct"` | Slug of a vision-capable model. Browse and compare at [openrouter.ai/models](https://openrouter.ai/models?modality=text+image-%3Etext) |
 | `prompt` | string | see below | Instruction sent to the model alongside the image |
-| `skip_captioned` | bool | `true` | Skip images that already have at least one caption |
 | `max_samples` | int | `200` | Maximum images per run. `0` means no limit |
 | `max_image_edge` | int | `256` | Longest edge in pixels after downscaling. Lower is cheaper and faster. Minimum 64, or `0` to disable resizing |
 | `max_tokens` | int | `200` | Caption length cap in tokens |
@@ -45,6 +44,10 @@ The default prompt is:
 
 The request timeout (60s), retry count (3) and OpenRouter provider sort (`throughput`)
 are fixed in [`settings.py`](src/lightly_plugins_openrouter_image_captioning/settings.py).
+
+The operator captions whatever the current view holds. Use the Lightly Studio filters to
+choose which images that is — filtering to images without captions is how you avoid
+captioning an image twice.
 
 ## Tuning a large run
 
@@ -74,6 +77,7 @@ timings are logged at `DEBUG`.
   `max_samples` modest and raise `max_concurrency` instead of launching one huge batch.
 - Images are downscaled and JPEG re-encoded before upload. Originals are never modified.
 - `:free` model variants are heavily rate limited and spend most of a run in backoff.
-- With `skip_captioned = false` a second run **adds** a caption rather than replacing it.
+- Captioning an image that already has a caption **adds** a second one rather than
+  replacing it. Filter the view to images without captions before re-running.
 - Failures are isolated per image: unreadable files and rejected requests are counted and
   reported, and the rest of the run continues.
