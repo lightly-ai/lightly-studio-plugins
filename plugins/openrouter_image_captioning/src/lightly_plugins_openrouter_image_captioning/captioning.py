@@ -27,6 +27,9 @@ from lightly_plugins_openrouter_image_captioning import (
     image_encoding,
     openrouter_client,
 )
+from lightly_plugins_openrouter_image_captioning import (
+    settings as settings_module,
+)
 from lightly_plugins_openrouter_image_captioning.image_encoding import (
     ImageEncodingError,
 )
@@ -194,7 +197,7 @@ def _build_client(*, settings: CaptionSettings) -> httpx.Client:
         max_connections=settings.max_concurrency,
         max_keepalive_connections=settings.max_concurrency,
     )
-    return httpx.Client(timeout=settings.request_timeout, limits=limits)
+    return httpx.Client(timeout=settings_module.REQUEST_TIMEOUT, limits=limits)
 
 
 def _build_pool(*, settings: CaptionSettings) -> ThreadPoolExecutor:
@@ -238,15 +241,11 @@ def _build_request_config(
 ) -> OpenRouterRequestConfig:
     """Translate the run settings into an immutable request configuration."""
     return OpenRouterRequestConfig(
-        base_url=settings.base_url,
         api_key=api_key,
         model=settings.model,
         prompt=settings.prompt,
         max_tokens=settings.max_tokens,
         temperature=settings.temperature,
-        max_retries=settings.max_retries,
-        timeout=settings.request_timeout,
-        provider_sort=settings.provider_sort,
         session_id=session_id,
     )
 

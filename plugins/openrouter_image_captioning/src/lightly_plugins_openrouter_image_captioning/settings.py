@@ -17,20 +17,27 @@ from lightly_studio.plugins.parameter import (
 API_KEY_ENV_VAR = "OPENROUTER_API_KEY"
 MODELS_URL = "https://openrouter.ai/models"
 
+BASE_URL = "https://openrouter.ai/api/v1"
+"""OpenRouter's OpenAI-compatible API root."""
+
+# The settings below are deliberately not exposed as parameters: their defaults work for
+# every run we know of, and a user has no basis on which to choose a different value.
+PROVIDER_SORT = "throughput"
+"""How OpenRouter orders the providers of a model. Bulk captioning wants throughput."""
+REQUEST_TIMEOUT = 60.0
+"""Per-request timeout in seconds. Generous for a caption; a stall is handled by a retry."""
+MAX_RETRIES = 3
+"""Retries per image on rate limits, server errors and network errors."""
+
 PARAM_MODEL = "model"
 PARAM_PROMPT = "prompt"
-PARAM_BASE_URL = "base_url"
 PARAM_MAX_TOKENS = "max_tokens"
 PARAM_TEMPERATURE = "temperature"
 PARAM_SKIP_CAPTIONED = "skip_captioned"
 PARAM_MAX_SAMPLES = "max_samples"
 PARAM_MAX_IMAGE_EDGE = "max_image_edge"
 PARAM_MAX_CONCURRENCY = "max_concurrency"
-PARAM_PROVIDER_SORT = "provider_sort"
-PARAM_REQUEST_TIMEOUT = "request_timeout"
-PARAM_MAX_RETRIES = "max_retries"
 
-_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 _DEFAULT_MODEL = "qwen/qwen3-vl-8b-instruct"
 _DEFAULT_PROMPT = (
     "Describe this image in one or two concise sentences. Name the main objects, their "
@@ -41,12 +48,7 @@ _DEFAULT_TEMPERATURE = 0.2
 _DEFAULT_MAX_SAMPLES = 200
 _DEFAULT_MAX_IMAGE_EDGE = 256
 _DEFAULT_MAX_CONCURRENCY = 16
-_DEFAULT_PROVIDER_SORT = "throughput"
-_DEFAULT_REQUEST_TIMEOUT = 60.0
-_DEFAULT_MAX_RETRIES = 3
 
-# An empty choice means "let OpenRouter decide", keeping its default load balancing.
-_PROVIDER_SORTS = ("", "throughput", "latency", "price")
 # Below 64 an image carries too little detail to caption; 0 means "do not resize".
 _MIN_USEFUL_IMAGE_EDGE = 64
 
@@ -62,30 +64,22 @@ class CaptionSettings:
     Attributes:
         model: OpenRouter slug of a vision-capable model.
         prompt: Instruction sent alongside each image.
-        base_url: OpenAI-compatible API base URL.
         max_tokens: Upper bound on caption length in tokens.
         temperature: Sampling temperature.
         skip_captioned: Whether images that already have a caption are skipped.
         max_samples: Maximum images per run, or 0 for no limit.
         max_image_edge: Longest edge in pixels after downscaling, or 0 to not resize.
         max_concurrency: Number of images captioned in parallel.
-        provider_sort: How OpenRouter orders providers, or empty for its default.
-        request_timeout: Per-request timeout in seconds.
-        max_retries: Retries per image on rate limits, server errors and network errors.
     """
 
     model: str
     prompt: str
-    base_url: str
     max_tokens: int
     temperature: float
     skip_captioned: bool
     max_samples: int
     max_image_edge: int
     max_concurrency: int
-    provider_sort: str
-    request_timeout: float
-    max_retries: int
 
 
 def build_parameters() -> list[BaseParameter]:
@@ -105,15 +99,6 @@ def build_parameters() -> list[BaseParameter]:
             required=True,
             default=_DEFAULT_PROMPT,
             description="Instruction sent to the model together with the image.",
-        ),
-        StringParameter(
-            name=PARAM_BASE_URL,
-            required=False,
-            default=_DEFAULT_BASE_URL,
-            description=(
-                "OpenAI-compatible API base URL. Change only to use a proxy or a "
-                "different gateway."
-            ),
         ),
         IntParameter(
             name=PARAM_MAX_TOKENS,
@@ -169,31 +154,6 @@ def build_parameters() -> list[BaseParameter]:
                 "runs; lower it if requests start hitting rate limits."
             ),
         ),
-        StringParameter(
-            name=PARAM_PROVIDER_SORT,
-            required=False,
-            default=_DEFAULT_PROVIDER_SORT,
-            description=(
-                "How OpenRouter picks between providers serving the model: 'throughput' "
-                "for bulk speed, 'latency' for fastest first token, 'price' for lowest "
-                "cost. Leave empty for OpenRouter's default load balancing."
-            ),
-        ),
-        FloatParameter(
-            name=PARAM_REQUEST_TIMEOUT,
-            required=False,
-            default=_DEFAULT_REQUEST_TIMEOUT,
-            description="Per-request timeout in seconds.",
-        ),
-        IntParameter(
-            name=PARAM_MAX_RETRIES,
-            required=False,
-            default=_DEFAULT_MAX_RETRIES,
-            description=(
-                "Retries per image on rate limits (429), server errors (5xx) and "
-                "network errors."
-            ),
-        ),
     ]
 
 
@@ -218,19 +178,9 @@ def read_settings(*, parameters: Mapping[str, Any]) -> CaptionSettings:
             f"{_MIN_USEFUL_IMAGE_EDGE}, or 0 to upload images unresized."
         )
 
-    provider_sort = _text(
-        parameters, PARAM_PROVIDER_SORT, _DEFAULT_PROVIDER_SORT, keep_blank=True
-    ).lower()
-    if provider_sort not in _PROVIDER_SORTS:
-        readable = ", ".join(f"'{option}'" for option in _PROVIDER_SORTS if option)
-        raise ParameterError(
-            f"Parameter '{PARAM_PROVIDER_SORT}' must be one of {readable}, or empty."
-        )
-
     return CaptionSettings(
         model=_text(parameters, PARAM_MODEL, _DEFAULT_MODEL),
         prompt=_text(parameters, PARAM_PROMPT, _DEFAULT_PROMPT),
-        base_url=_text(parameters, PARAM_BASE_URL, _DEFAULT_BASE_URL),
         max_tokens=_number(
             parameters, PARAM_MAX_TOKENS, _DEFAULT_MAX_TOKENS, int, 16, 4096
         ),
@@ -245,29 +195,11 @@ def read_settings(*, parameters: Mapping[str, Any]) -> CaptionSettings:
         max_concurrency=_number(
             parameters, PARAM_MAX_CONCURRENCY, _DEFAULT_MAX_CONCURRENCY, int, 1, 64
         ),
-        provider_sort=provider_sort,
-        request_timeout=_number(
-            parameters,
-            PARAM_REQUEST_TIMEOUT,
-            _DEFAULT_REQUEST_TIMEOUT,
-            float,
-            1.0,
-            600.0,
-        ),
-        max_retries=_number(
-            parameters, PARAM_MAX_RETRIES, _DEFAULT_MAX_RETRIES, int, 0, 10
-        ),
     )
 
 
-def _text(
-    parameters: Mapping[str, Any],
-    name: str,
-    default: str,
-    *,
-    keep_blank: bool = False,
-) -> str:
-    """Read a string parameter, falling back to the default when absent.
+def _text(parameters: Mapping[str, Any], name: str, default: str) -> str:
+    """Read a string parameter, falling back to the default when absent or blank.
 
     Raises:
         ParameterError: If the value is not text.
@@ -277,9 +209,7 @@ def _text(
         return default
     if not isinstance(value, str):
         raise ParameterError(f"Parameter '{name}' must be text.")
-    stripped = value.strip()
-    # A blank choice stays selectable, so it must not fall back to the default.
-    return stripped if keep_blank else (stripped or default)
+    return value.strip() or default
 
 
 def _boolean(parameters: Mapping[str, Any], name: str, *, default: bool) -> bool:

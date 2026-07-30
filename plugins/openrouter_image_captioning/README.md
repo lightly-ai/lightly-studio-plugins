@@ -31,28 +31,27 @@ uv pip install "git+https://github.com/lightly-ai/lightly-studio-plugins.git#sub
 |---|---|---|---|
 | `model` | string | `"qwen/qwen3-vl-8b-instruct"` | Slug of a vision-capable model. Browse and compare at [openrouter.ai/models](https://openrouter.ai/models?modality=text+image-%3Etext) |
 | `prompt` | string | see below | Instruction sent to the model alongside the image |
-| `base_url` | string | `"https://openrouter.ai/api/v1"` | OpenAI-compatible base URL. Change only for a proxy or a different gateway |
 | `skip_captioned` | bool | `true` | Skip images that already have at least one caption |
 | `max_samples` | int | `200` | Maximum images per run. `0` means no limit |
 | `max_image_edge` | int | `256` | Longest edge in pixels after downscaling. Lower is cheaper and faster. Minimum 64, or `0` to disable resizing |
 | `max_tokens` | int | `200` | Caption length cap in tokens |
 | `temperature` | float | `0.2` | Sampling temperature. `0.0` for the most reproducible captions |
 | `max_concurrency` | int | `16` | Images captioned in parallel. Max 64 |
-| `provider_sort` | string | `"throughput"` | How OpenRouter picks between providers: `throughput`, `latency`, `price`, or empty for its default load balancing |
-| `request_timeout` | float | `60.0` | Per-request timeout in seconds |
-| `max_retries` | int | `3` | Retries per image on rate limits (429), server errors (5xx) and network errors |
 
 The default prompt is:
 
 > Describe this image in one or two concise sentences. Name the main objects, their
 > notable attributes and the overall scene. Do not begin with 'The image shows'.
 
+The request timeout (60s), retry count (3) and OpenRouter provider sort (`throughput`)
+are fixed in [`settings.py`](src/lightly_plugins_openrouter_image_captioning/settings.py).
+
 ## Tuning a large run
 
 Wall-clock time is roughly `image_count / max_concurrency x per-request latency`, so
 `max_concurrency` is the main lever — raise it until the result message starts reporting
-failures, which means you have hit the per-key rate limit. `provider_sort` picks between
-providers of differing speed, and lowering `max_image_edge` cuts both latency and cost.
+failures, which means you have hit the per-key rate limit. Lowering `max_image_edge` cuts
+both latency and cost.
 
 Each run logs its OpenRouter `session_id` and timings to the server log:
 

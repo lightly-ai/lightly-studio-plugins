@@ -13,6 +13,8 @@ from typing import Any
 
 import httpx
 
+from lightly_plugins_openrouter_image_captioning import settings
+
 logger = logging.getLogger(__name__)
 
 _CHAT_COMPLETIONS_PATH = "/chat/completions"
@@ -38,28 +40,20 @@ class OpenRouterRequestConfig:
     """Immutable request configuration shared by all worker threads.
 
     Attributes:
-        base_url: OpenAI-compatible API base URL.
         api_key: OpenRouter API key.
         model: Model slug to caption with.
         prompt: Instruction sent alongside each image.
         max_tokens: Upper bound on caption length in tokens.
         temperature: Sampling temperature.
-        max_retries: Retries per request on transient failures.
-        timeout: Per-request timeout in seconds.
-        provider_sort: How OpenRouter orders providers, or empty for its default.
         session_id: Groups all requests of one run for observability, or empty to send
             no grouping key. At most `SESSION_ID_MAX_LENGTH` characters.
     """
 
-    base_url: str
     api_key: str
     model: str
     prompt: str
     max_tokens: int
     temperature: float
-    max_retries: int
-    timeout: float
-    provider_sort: str = ""
     session_id: str = ""
 
 
@@ -81,7 +75,7 @@ def request_caption(
     """
     response = _post_with_retries(
         client=client,
-        url=config.base_url.rstrip("/") + _CHAT_COMPLETIONS_PATH,
+        url=settings.BASE_URL + _CHAT_COMPLETIONS_PATH,
         headers=_build_headers(api_key=config.api_key),
         payload=_build_payload(config=config, image_data_url=image_data_url),
         config=config,
@@ -113,10 +107,9 @@ def _build_payload(
         "max_tokens": config.max_tokens,
         "temperature": config.temperature,
     }
-    if config.provider_sort:
-        # Many models are served by several providers at very different speeds. Sorting
-        # disables load balancing and tries providers in the requested order instead.
-        payload["provider"] = {"sort": config.provider_sort}
+    # Many models are served by several providers at very different speeds. Sorting
+    # disables load balancing and tries providers in the requested order instead.
+    payload["provider"] = {"sort": settings.PROVIDER_SORT}
     if config.session_id:
         # Groups the whole run in OpenRouter's activity view. It doubles as a sticky
         # routing key, which costs nothing here: captions share no cacheable prompt
@@ -151,7 +144,7 @@ def _post_with_retries(
         url: Fully qualified chat-completions URL.
         headers: Request headers.
         payload: Request body.
-        config: Request configuration; supplies the retry count and timeout.
+        config: Request configuration; names the model in error messages.
 
     Returns:
         The successful response.
@@ -159,12 +152,12 @@ def _post_with_retries(
     Raises:
         OpenRouterError: On a non-retryable status or after exhausting all retries.
     """
-    total_attempts = config.max_retries + 1
+    total_attempts = settings.MAX_RETRIES + 1
     for attempt in range(total_attempts):
         is_last_attempt = attempt == total_attempts - 1
         try:
             response = client.post(
-                url, headers=headers, json=payload, timeout=config.timeout
+                url, headers=headers, json=payload, timeout=settings.REQUEST_TIMEOUT
             )
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             if is_last_attempt:
