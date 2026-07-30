@@ -151,15 +151,12 @@ Each plugin entry below includes the exact copy-paste install command. After ins
   <summary>Details</summary>
 
   Uses [OpenRouter](https://openrouter.ai/)'s OpenAI-compatible API, so any
-  vision-capable model on the gateway can be used by changing one parameter. Captions are
-  stored as native Lightly Studio captions.
+  vision-capable model on the gateway can be used by changing one parameter.
 
   - Scope: single image or images in the current view
   - Input: model slug and prompt
   - Output: Lightly Studio captions
   - Requirement: an `OPENROUTER_API_KEY` environment variable
-  - Controls: prompt, model, max image edge, concurrency, timeout, retries, max samples,
-    and skipping already-captioned images
   - Default model: `qwen/qwen3-vl-8b-instruct`. Any vision-capable model from
     [openrouter.ai/models](https://openrouter.ai/models) works
   - Tradeoff: each run calls a paid API and blocks until it finishes, so keep
