@@ -53,6 +53,8 @@ _DEFAULT_PROMPT = (
     "Describe this image in one or two concise sentences. Name the main objects, their "
     "notable attributes and the overall scene. Do not begin with 'The image shows'."
 )
+_DEFAULT_MAX_IMAGE_EDGE = 256
+_DEFAULT_MAX_CONCURRENCY = 4
 _JPEG_QUALITY = 85
 _DB_FLUSH_BATCH_SIZE = 200
 
@@ -61,16 +63,6 @@ _MISSING_KEY_MESSAGE = (
     "export it (or put it in a .env file where you start LightlyStudio) and restart "
     "LightlyStudio."
 )
-
-
-@dataclass(frozen=True)
-class CaptionSettings:
-    """Validated operator parameters for one captioning run."""
-
-    model: str
-    prompt: str
-    max_image_edge: int
-    max_concurrency: int
 
 
 @dataclass(frozen=True)
@@ -125,7 +117,7 @@ class OpenRouterImageCaptioningOperator(BaseOperator):
             IntParameter(
                 name="max_image_edge",
                 required=False,
-                default=256,
+                default=_DEFAULT_MAX_IMAGE_EDGE,
                 description=(
                     "Downscale images so the longest edge is at most this many pixels "
                     "before upload. Lower is cheaper and faster, but fine detail is "
@@ -136,7 +128,7 @@ class OpenRouterImageCaptioningOperator(BaseOperator):
             IntParameter(
                 name="max_concurrency",
                 required=False,
-                default=16,
+                default=_DEFAULT_MAX_CONCURRENCY,
                 description=(
                     "Number of images captioned in parallel. Raise this to speed up "
                     "large runs; lower it if requests start hitting rate limits."
@@ -173,7 +165,6 @@ def _run(
     if not api_key:
         return OperatorResult(success=False, message=_MISSING_KEY_MESSAGE)
 
-    settings = _read_settings(parameters=parameters)
     jobs = _find_jobs(
         session=session,
         context=context,
@@ -188,20 +179,13 @@ def _run(
         session=session,
         collection_id=context.collection_id,
         jobs=jobs,
-        settings=settings,
+        model=_text(parameters, "model", _DEFAULT_MODEL),
+        prompt=_text(parameters, "prompt", _DEFAULT_PROMPT),
+        max_image_edge=_int(parameters, "max_image_edge", _DEFAULT_MAX_IMAGE_EDGE),
+        max_concurrency=_int(parameters, "max_concurrency", _DEFAULT_MAX_CONCURRENCY),
         api_key=api_key,
     )
     return _build_result(tally=tally)
-
-
-def _read_settings(*, parameters: Mapping[str, Any]) -> CaptionSettings:
-    """Coerce and clamp the raw parameter dict into usable settings."""
-    return CaptionSettings(
-        model=_text(parameters, "model", _DEFAULT_MODEL),
-        prompt=_text(parameters, "prompt", _DEFAULT_PROMPT),
-        max_image_edge=_clamped_int(parameters, "max_image_edge", 256, 0, 4096, 64),
-        max_concurrency=_clamped_int(parameters, "max_concurrency", 16, 1, 64),
-    )
 
 
 def _text(parameters: Mapping[str, Any], name: str, default: str) -> str:
@@ -210,37 +194,23 @@ def _text(parameters: Mapping[str, Any], name: str, default: str) -> str:
     return value.strip() or default if isinstance(value, str) else default
 
 
-def _clamped_int(
-    parameters: Mapping[str, Any],
-    name: str,
-    default: int,
-    minimum: int,
-    maximum: int,
-    floor_above_zero: int | None = None,
-) -> int:
-    """Read an int parameter and clamp it into its usable range.
+def _int(parameters: Mapping[str, Any], name: str, default: int) -> int:
+    """Read a positive int parameter, falling back to the default when unusable.
 
-    A value outside the range is clamped rather than rejected: the GUI offers no way
-    to explain a validation error per field, and every bound here has a safe nearest
-    value. `floor_above_zero` raises non-zero values up to that minimum, so that a
-    `max_image_edge` too small to carry any detail becomes the smallest useful size
-    while 0 still means "do not resize".
+    `max_image_edge` accepts 0 to mean "do not resize", so 0 is passed through and
+    only negative values fall back.
     """
     value = parameters.get(name)
-    if isinstance(value, bool) or not isinstance(value, int):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return default
-    if floor_above_zero is not None and 0 < value < floor_above_zero:
-        return floor_above_zero
-    return max(minimum, min(value, maximum))
+    return value
 
 
 def _resolve_image_filter(*, context_filter: AnyFilter | None) -> ImageFilter | None:
     """Narrow the discriminated filter union down to an image filter.
 
-    The GUI hands over either an already specific `ImageFilter` or the more general
-    `SampleFilter`, depending on where the operator was triggered from. The filter is
-    passed through untouched: which images to caption is decided in the GUI, so a view
-    filtered to uncaptioned images is the way to avoid captioning an image twice.
+    Which images to caption is decided in the GUI, so a view filtered to uncaptioned
+    images is the way to avoid captioning an image twice.
     """
     if isinstance(context_filter, SampleFilter):
         return ImageFilter(sample_filter=context_filter)
@@ -267,22 +237,23 @@ def _caption_images(
     session: Session,
     collection_id: UUID,
     jobs: Sequence[CaptionJob],
-    settings: CaptionSettings,
+    model: str,
+    prompt: str,
+    max_image_edge: int,
+    max_concurrency: int,
     api_key: str,
 ) -> CaptionTally:
     """Caption every job concurrently and persist the captions that succeed."""
     logger.info(
         "Captioning %d image(s) with %s at concurrency %d.",
         len(jobs),
-        settings.model,
-        settings.max_concurrency,
+        model,
+        max_concurrency,
     )
-    config = RequestConfig(
-        api_key=api_key, model=settings.model, prompt=settings.prompt
-    )
+    config = RequestConfig(api_key=api_key, model=model, prompt=prompt)
     limits = httpx.Limits(
-        max_connections=settings.max_concurrency,
-        max_keepalive_connections=settings.max_concurrency,
+        max_connections=max_concurrency,
+        max_keepalive_connections=max_concurrency,
     )
     tally = CaptionTally()
     pending: list[CaptionCreate] = []
@@ -292,7 +263,7 @@ def _caption_images(
             timeout=openrouter_client.REQUEST_TIMEOUT, limits=limits
         ) as client,
         ThreadPoolExecutor(
-            max_workers=settings.max_concurrency,
+            max_workers=max_concurrency,
             thread_name_prefix="openrouter-caption",
         ) as pool,
     ):
@@ -302,7 +273,7 @@ def _caption_images(
                 job=job,
                 client=client,
                 config=config,
-                max_image_edge=settings.max_image_edge,
+                max_image_edge=max_image_edge,
             ): job
             for job in jobs
         }
@@ -391,7 +362,6 @@ def _result_or_record_failure(
 def _store_captions(
     *, session: Session, collection_id: UUID, captions: Sequence[CaptionCreate]
 ) -> int:
-    """Persist a batch of captions and return how many were written."""
     if not captions:
         return 0
     caption_resolver.create_many(

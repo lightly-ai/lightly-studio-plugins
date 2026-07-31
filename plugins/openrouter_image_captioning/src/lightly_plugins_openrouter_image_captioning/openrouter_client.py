@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import email.utils
 import logging
 import random
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -22,7 +20,6 @@ TEMPERATURE = 0.2
 
 _RETRYABLE_STATUS_CODES = frozenset({408, 409, 425, 429, 500, 502, 503, 504, 522, 524})
 _MAX_BACKOFF_SECONDS = 30.0
-_MAX_RETRY_AFTER_SECONDS = 60.0
 _ERROR_BODY_CHARS = 300
 
 logger = logging.getLogger(__name__)
@@ -112,7 +109,7 @@ def _post_with_retries(
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             if is_last:
                 raise OpenRouterError(f"Request to OpenRouter failed: {exc}") from exc
-            time.sleep(_retry_delay_seconds(response=None, attempt=attempt))
+            time.sleep(_retry_delay_seconds(attempt=attempt))
             continue
 
         if response.status_code == httpx.codes.OK:
@@ -124,7 +121,7 @@ def _post_with_retries(
                 f"OpenRouter returned HTTP {response.status_code} after "
                 f"{attempts} attempt(s): {_excerpt(response)}"
             )
-        time.sleep(_retry_delay_seconds(response=response, attempt=attempt))
+        time.sleep(_retry_delay_seconds(attempt=attempt))
 
     raise OpenRouterError("Request to OpenRouter failed.")
 
@@ -143,12 +140,7 @@ def _error_message(*, response: httpx.Response, model: str) -> str:
             "OpenRouter reports insufficient credits (HTTP 402). Top up your "
             f"account at https://openrouter.ai/credits: {excerpt}"
         )
-    if status in (httpx.codes.BAD_REQUEST, httpx.codes.NOT_FOUND):
-        return (
-            f"OpenRouter rejected the request (HTTP {status}). Check that the "
-            f"model '{model}' exists and accepts images: {excerpt}"
-        )
-    return f"OpenRouter returned HTTP {status}: {excerpt}"
+    return f"OpenRouter returned HTTP {status} for model '{model}': {excerpt}"
 
 
 def _excerpt(response: httpx.Response) -> str:
@@ -156,38 +148,14 @@ def _excerpt(response: httpx.Response) -> str:
     return " ".join(response.text.split())[:_ERROR_BODY_CHARS]
 
 
-def _retry_delay_seconds(*, response: httpx.Response | None, attempt: int) -> float:
+def _retry_delay_seconds(*, attempt: int) -> float:
     """Return how long to wait before the next attempt.
 
-    Honours the server's own hint when present, otherwise uses exponential backoff
-    with full jitter so concurrent workers do not all retry at the same instant.
+    Exponential backoff with jitter, so concurrent workers do not all retry at the
+    same instant.
     """
-    if response is not None:
-        for header in ("retry-after", "x-ratelimit-reset-after"):
-            raw = response.headers.get(header)
-            if raw is None:
-                continue
-            seconds = _parse_retry_after(raw)
-            if seconds is not None:
-                return min(max(seconds, 0.0), _MAX_RETRY_AFTER_SECONDS)
     backoff = min(2.0**attempt, _MAX_BACKOFF_SECONDS)
     return backoff * (0.5 + random.random() / 2.0)
-
-
-def _parse_retry_after(raw: str) -> float | None:
-    """Parse a Retry-After value given either as seconds or as an HTTP date."""
-    value = raw.strip()
-    try:
-        return float(value)
-    except ValueError:
-        pass
-    try:
-        parsed = email.utils.parsedate_to_datetime(value)
-    except (TypeError, ValueError):
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return (parsed - datetime.now(timezone.utc)).total_seconds()
 
 
 def _extract_caption(body: object) -> str:
@@ -227,9 +195,6 @@ def _content_to_text(content: object) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return "\n".join(
-            part["text"]
-            for part in content
-            if isinstance(part, Mapping) and isinstance(part.get("text"), str)
-        )
+        parts = (p.get("text") for p in content if isinstance(p, Mapping))
+        return "\n".join(p for p in parts if isinstance(p, str))
     return ""
