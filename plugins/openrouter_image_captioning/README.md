@@ -21,7 +21,6 @@ Out-of-range values are clamped to the nearest usable one.
 |---|---|---|---|
 | `model` | string | `"qwen/qwen3-vl-8b-instruct"` | Slug of a vision-capable model. Browse at [openrouter.ai/models](https://openrouter.ai/models?modality=text+image-%3Etext) |
 | `prompt` | string | Describe this image in one or two concise sentences… | Instruction sent alongside the image |
-| `max_samples` | int | `200` | Maximum images per run. `0` means no limit |
 | `max_image_edge` | int | `256` | Longest edge in pixels after downscaling; images are JPEG re-encoded before upload, never on disk. Lower is cheaper and faster. Minimum 64, or `0` to disable resizing |
 | `max_concurrency` | int | `16` | Images captioned in parallel. Max 64 |
 
@@ -31,9 +30,11 @@ provider sort (`throughput`) are fixed in
 
 ## Notes
 
-- **Every run costs money**, per image and per token. Start with a small `max_samples`.
-- The operator captions whatever the current view holds. Filter in the GUI to choose which
-  images — a caption is **added** to images that already have one, not replaced.
+- **Every run costs money**, per image and per token. There is no cap: the operator
+  captions **every** image the current view holds, so filter it down first and check the
+  image count before starting a run.
+- Filter in the GUI to choose which images — a caption is **added** to images that already
+  have one, not replaced.
 - `max_concurrency` is the main speed lever. Raise it until the result reports failures,
   which means you hit the per-key rate limit. `:free` models are throttled hardest.
 - Runs block until finished and cannot be cancelled by closing the browser.

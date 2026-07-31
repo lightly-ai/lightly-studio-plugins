@@ -159,8 +159,8 @@ Each plugin entry below includes the exact copy-paste install command. After ins
   - Requirement: an `OPENROUTER_API_KEY` environment variable
   - Default model: `qwen/qwen3-vl-8b-instruct`. Any vision-capable model from
     [openrouter.ai/models](https://openrouter.ai/models) works
-  - Tradeoff: each run calls a paid API and blocks until it finishes, so keep
-    `max_samples` modest
+  - Tradeoff: each run calls a paid API and blocks until it finishes, so filter the
+    view down before captioning
   - Maintainer: Lightly
   - Install:
     `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/openrouter_image_captioning/`

@@ -11,11 +11,9 @@ import concurrent.futures
 import io
 import logging
 import os
-import statistics
-import time
 from collections.abc import Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -71,7 +69,6 @@ class CaptionSettings:
 
     model: str
     prompt: str
-    max_samples: int
     max_image_edge: int
     max_concurrency: int
 
@@ -90,17 +87,11 @@ class CaptionJob:
 
 @dataclass
 class CaptionTally:
-    """Running counts and timings of a captioning run.
-
-    Failed requests are left out of `request_durations_s` because a timed-out request
-    only measures the timeout.
-    """
+    """Running counts of a captioning run."""
 
     stored: int = 0
     failed: int = 0
     first_error: str | None = None
-    elapsed_s: float = 0.0
-    request_durations_s: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -130,14 +121,6 @@ class OpenRouterImageCaptioningOperator(BaseOperator):
                 required=True,
                 default=_DEFAULT_PROMPT,
                 description="Instruction sent to the model together with the image.",
-            ),
-            IntParameter(
-                name="max_samples",
-                required=False,
-                default=200,
-                description=(
-                    "Maximum number of images to caption in one run. 0 means no limit."
-                ),
             ),
             IntParameter(
                 name="max_image_edge",
@@ -201,11 +184,6 @@ def _run(
             success=True, message="No images to caption in the current view."
         )
 
-    truncated = 0
-    if 0 < settings.max_samples < len(jobs):
-        truncated = len(jobs) - settings.max_samples
-        jobs = jobs[: settings.max_samples]
-
     tally = _caption_images(
         session=session,
         collection_id=context.collection_id,
@@ -213,7 +191,7 @@ def _run(
         settings=settings,
         api_key=api_key,
     )
-    return _build_result(tally=tally, truncated=truncated)
+    return _build_result(tally=tally)
 
 
 def _read_settings(*, parameters: Mapping[str, Any]) -> CaptionSettings:
@@ -221,7 +199,6 @@ def _read_settings(*, parameters: Mapping[str, Any]) -> CaptionSettings:
     return CaptionSettings(
         model=_text(parameters, "model", _DEFAULT_MODEL),
         prompt=_text(parameters, "prompt", _DEFAULT_PROMPT),
-        max_samples=_clamped_int(parameters, "max_samples", 200, 0, 100_000),
         max_image_edge=_clamped_int(parameters, "max_image_edge", 256, 0, 4096, 64),
         max_concurrency=_clamped_int(parameters, "max_concurrency", 16, 1, 64),
     )
@@ -309,7 +286,6 @@ def _caption_images(
     )
     tally = CaptionTally()
     pending: list[CaptionCreate] = []
-    started_at = time.monotonic()
 
     with (
         httpx.Client(
@@ -345,8 +321,7 @@ def _caption_images(
     tally.stored += _store_captions(
         session=session, collection_id=collection_id, captions=pending
     )
-    tally.elapsed_s = time.monotonic() - started_at
-    _log_summary(tally=tally, total=len(jobs))
+    logger.info("Captioned %d/%d image(s).", tally.stored, len(jobs))
     return tally
 
 
@@ -356,20 +331,18 @@ def _caption_one(
     client: httpx.Client,
     config: RequestConfig,
     max_image_edge: int,
-) -> tuple[str, float]:
-    """Encode one image and return its caption and request duration.
+) -> str:
+    """Encode one image and return its caption.
 
     Runs in a worker thread. Encoding happens here rather than up front so that the
     JPEG bytes of all images are never held in memory at once.
     """
-    started_at = time.monotonic()
     data_url = _encode_image_as_data_url(
         file_path=job.file_path_abs, max_edge=max_image_edge
     )
-    text = openrouter_client.request_caption(
+    return openrouter_client.request_caption(
         client=client, config=config, image_data_url=data_url
     )
-    return text, time.monotonic() - started_at
 
 
 def _encode_image_as_data_url(*, file_path: str, max_edge: int) -> str:
@@ -394,7 +367,7 @@ def _encode_image_as_data_url(*, file_path: str, max_edge: int) -> str:
 
 
 def _result_or_record_failure(
-    *, future: Future[tuple[str, float]], job: CaptionJob, tally: CaptionTally
+    *, future: Future[str], job: CaptionJob, tally: CaptionTally
 ) -> str | None:
     """Return the caption of a finished job, or None after recording its failure.
 
@@ -402,7 +375,7 @@ def _result_or_record_failure(
     request does not abort the whole run.
     """
     try:
-        text, duration_s = future.result()
+        return future.result()
     except OpenRouterError as exc:
         tally.failed += 1
         tally.first_error = tally.first_error or str(exc)
@@ -413,8 +386,6 @@ def _result_or_record_failure(
         tally.first_error = tally.first_error or "Unexpected error, see the server log."
         logger.exception("Captioning failed for %s.", job.file_path_abs)
         return None
-    tally.request_durations_s.append(duration_s)
-    return text
 
 
 def _store_captions(
@@ -429,30 +400,7 @@ def _store_captions(
     return len(captions)
 
 
-def _log_summary(*, tally: CaptionTally, total: int) -> None:
-    """Log how long the run took and how fast the requests were.
-
-    Both numbers are needed to tell a slow provider apart from too little
-    concurrency: if the median request is fast but throughput is far below
-    `concurrency / median`, the run is bottlenecked somewhere other than the model.
-    """
-    throughput = tally.stored / tally.elapsed_s if tally.elapsed_s > 0 else 0.0
-    summary = (
-        f"Captioned {tally.stored}/{total} image(s) in {tally.elapsed_s:.1f}s "
-        f"({throughput:.1f} image/s)"
-    )
-    if not tally.request_durations_s:
-        logger.info("%s.", summary)
-        return
-    logger.info(
-        "%s. Request time median %.1fs, slowest %.1fs.",
-        summary,
-        statistics.median(tally.request_durations_s),
-        max(tally.request_durations_s),
-    )
-
-
-def _build_result(*, tally: CaptionTally, truncated: int) -> OperatorResult:
+def _build_result(*, tally: CaptionTally) -> OperatorResult:
     """Turn the run counts into a result for the GUI.
 
     A run where nothing succeeded is reported as a failure, because that points at a
@@ -466,9 +414,7 @@ def _build_result(*, tally: CaptionTally, truncated: int) -> OperatorResult:
                 f"First error: {tally.first_error}"
             ),
         )
-    parts = [f"Captioned {tally.stored} image(s) in {tally.elapsed_s:.1f}s."]
+    parts = [f"Captioned {tally.stored} image(s)."]
     if tally.failed:
         parts.append(f"{tally.failed} failed (first error: {tally.first_error}).")
-    if truncated:
-        parts.append(f"{truncated} image(s) skipped by max_samples.")
     return OperatorResult(success=True, message=" ".join(parts))
