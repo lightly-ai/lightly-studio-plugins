@@ -15,22 +15,19 @@ uv pip install "git+https://github.com/lightly-ai/lightly-studio-plugins.git#sub
 
 ## Parameters
 
+Out-of-range values are clamped to the nearest usable one.
+
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `model` | string | `"qwen/qwen3-vl-8b-instruct"` | Slug of a vision-capable model. Browse at [openrouter.ai/models](https://openrouter.ai/models?modality=text+image-%3Etext) |
-| `prompt` | string | see below | Instruction sent alongside the image |
+| `prompt` | string | Describe this image in one or two concise sentences… | Instruction sent alongside the image |
 | `max_samples` | int | `200` | Maximum images per run. `0` means no limit |
 | `max_image_edge` | int | `256` | Longest edge in pixels after downscaling; images are JPEG re-encoded before upload, never on disk. Lower is cheaper and faster. Minimum 64, or `0` to disable resizing |
 | `max_concurrency` | int | `16` | Images captioned in parallel. Max 64 |
 
-The default prompt:
-
-> Describe this image in one or two concise sentences. Name the main objects, their
-> notable attributes and the overall scene. Do not begin with 'The image shows'.
-
 Caption length cap (200 tokens), temperature (0.2), request timeout (60s), retries (3) and
 provider sort (`throughput`) are fixed in
-[`settings.py`](src/lightly_plugins_openrouter_image_captioning/settings.py).
+[`openrouter_client.py`](src/lightly_plugins_openrouter_image_captioning/openrouter_client.py).
 
 ## Notes
 

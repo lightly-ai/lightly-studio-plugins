@@ -13,19 +13,19 @@ from typing import Any
 
 import httpx
 
-from lightly_plugins_openrouter_image_captioning import settings
+BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+PROVIDER_SORT = "throughput"
+REQUEST_TIMEOUT = 60.0
+MAX_RETRIES = 3
+MAX_TOKENS = 200
+TEMPERATURE = 0.2
 
-logger = logging.getLogger(__name__)
-
-_CHAT_COMPLETIONS_PATH = "/chat/completions"
-# Statuses worth retrying: request timeouts, conflicts, "too early", rate limits, and
-# transient upstream/gateway failures. 522 and 524 are Cloudflare-specific timeouts.
 _RETRYABLE_STATUS_CODES = frozenset({408, 409, 425, 429, 500, 502, 503, 504, 522, 524})
 _MAX_BACKOFF_SECONDS = 30.0
 _MAX_RETRY_AFTER_SECONDS = 60.0
 _ERROR_BODY_CHARS = 300
-_REFERER = "https://lightly.ai"
-_TITLE = "LightlyStudio"
+
+logger = logging.getLogger(__name__)
 
 
 class OpenRouterError(RuntimeError):
@@ -33,26 +33,16 @@ class OpenRouterError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class OpenRouterRequestConfig:
-    """Immutable request configuration shared by all worker threads.
-
-    Attributes:
-        api_key: OpenRouter API key.
-        model: Model slug to caption with.
-        prompt: Instruction sent alongside each image.
-        max_tokens: Upper bound on caption length in tokens.
-        temperature: Sampling temperature.
-    """
+class RequestConfig:
+    """Immutable request configuration shared by all worker threads."""
 
     api_key: str
     model: str
     prompt: str
-    max_tokens: int
-    temperature: float
 
 
 def request_caption(
-    *, client: httpx.Client, config: OpenRouterRequestConfig, image_data_url: str
+    *, client: httpx.Client, config: RequestConfig, image_data_url: str
 ) -> str:
     """Request a caption for a single image.
 
@@ -65,29 +55,9 @@ def request_caption(
         The caption text.
 
     Raises:
-        OpenRouterError: If the request fails or the response holds no usable caption.
+        OpenRouterError: If the request fails or the response holds no caption.
     """
-    response = _post_with_retries(
-        client=client,
-        url=settings.BASE_URL + _CHAT_COMPLETIONS_PATH,
-        headers=_build_headers(api_key=config.api_key),
-        payload=_build_payload(config=config, image_data_url=image_data_url),
-        config=config,
-    )
-    try:
-        body = response.json()
-    except ValueError as exc:
-        raise OpenRouterError(
-            f"OpenRouter returned a non-JSON response: {exc}"
-        ) from exc
-    return _extract_caption_text(body)
-
-
-def _build_payload(
-    *, config: OpenRouterRequestConfig, image_data_url: str
-) -> dict[str, Any]:
-    """Build the OpenAI-compatible chat-completions request body."""
-    payload: dict[str, Any] = {
+    payload = {
         "model": config.model,
         "messages": [
             {
@@ -98,121 +68,90 @@ def _build_payload(
                 ],
             }
         ],
-        "max_tokens": config.max_tokens,
-        "temperature": config.temperature,
+        "max_tokens": MAX_TOKENS,
+        "temperature": TEMPERATURE,
+        "provider": {"sort": PROVIDER_SORT},
     }
-    # Many models are served by several providers at very different speeds. Sorting
-    # disables load balancing and tries providers in the requested order instead.
-    payload["provider"] = {"sort": settings.PROVIDER_SORT}
-    return payload
-
-
-def _build_headers(*, api_key: str) -> dict[str, str]:
-    """Build the request headers, including OpenRouter's attribution headers."""
-    return {
-        "Authorization": f"Bearer {api_key}",
+    headers = {
+        "Authorization": f"Bearer {config.api_key}",
         "Content-Type": "application/json",
-        # Optional but recommended by OpenRouter; they attribute usage to the caller.
-        "HTTP-Referer": _REFERER,
-        "X-OpenRouter-Title": _TITLE,
+        "HTTP-Referer": "https://lightly.ai",
+        "X-OpenRouter-Title": "LightlyStudio",
     }
+    response = _post_with_retries(
+        client=client, headers=headers, payload=payload, model=config.model
+    )
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise OpenRouterError(
+            f"OpenRouter returned a non-JSON response: {exc}"
+        ) from exc
+    return _extract_caption(body)
 
 
 def _post_with_retries(
     *,
     client: httpx.Client,
-    url: str,
     headers: dict[str, str],
     payload: dict[str, Any],
-    config: OpenRouterRequestConfig,
+    model: str,
 ) -> httpx.Response:
     """POST the payload, retrying transient failures with capped backoff.
 
-    Args:
-        client: Shared HTTP client.
-        url: Fully qualified chat-completions URL.
-        headers: Request headers.
-        payload: Request body.
-        config: Request configuration; names the model in error messages.
-
-    Returns:
-        The successful response.
-
     Raises:
-        OpenRouterError: On a non-retryable status or after exhausting all retries.
+        OpenRouterError: On a non-retryable status or after exhausting retries.
     """
-    total_attempts = settings.MAX_RETRIES + 1
-    for attempt in range(total_attempts):
-        is_last_attempt = attempt == total_attempts - 1
+    attempts = MAX_RETRIES + 1
+    for attempt in range(attempts):
+        is_last = attempt == attempts - 1
         try:
             response = client.post(
-                url, headers=headers, json=payload, timeout=settings.REQUEST_TIMEOUT
+                BASE_URL, headers=headers, json=payload, timeout=REQUEST_TIMEOUT
             )
         except (httpx.TimeoutException, httpx.TransportError) as exc:
-            if is_last_attempt:
+            if is_last:
                 raise OpenRouterError(f"Request to OpenRouter failed: {exc}") from exc
             time.sleep(_retry_delay_seconds(response=None, attempt=attempt))
             continue
 
         if response.status_code == httpx.codes.OK:
             return response
-        _raise_unless_retryable(
-            response=response,
-            config=config,
-            is_last_attempt=is_last_attempt,
-            total_attempts=total_attempts,
-        )
+        if response.status_code not in _RETRYABLE_STATUS_CODES:
+            raise OpenRouterError(_error_message(response=response, model=model))
+        if is_last:
+            raise OpenRouterError(
+                f"OpenRouter returned HTTP {response.status_code} after "
+                f"{attempts} attempt(s): {_excerpt(response)}"
+            )
         time.sleep(_retry_delay_seconds(response=response, attempt=attempt))
 
-    # Unreachable: the loop either returns or raises on the last attempt.
     raise OpenRouterError("Request to OpenRouter failed.")
 
 
-def _raise_unless_retryable(
-    *,
-    response: httpx.Response,
-    config: OpenRouterRequestConfig,
-    is_last_attempt: bool,
-    total_attempts: int,
-) -> None:
-    """Raise unless the failed response is worth another attempt.
-
-    Raises:
-        OpenRouterError: If the status must not be retried, or retries are exhausted.
-    """
-    if response.status_code not in _RETRYABLE_STATUS_CODES:
-        raise OpenRouterError(_non_retryable_message(response=response, config=config))
-    if is_last_attempt:
-        raise OpenRouterError(
-            f"OpenRouter returned HTTP {response.status_code} after "
-            f"{total_attempts} attempt(s): {_response_excerpt(response)}"
-        )
-
-
-def _non_retryable_message(
-    *, response: httpx.Response, config: OpenRouterRequestConfig
-) -> str:
+def _error_message(*, response: httpx.Response, model: str) -> str:
     """Build an actionable message for a status that must not be retried."""
-    excerpt = _response_excerpt(response)
-    if response.status_code in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
+    excerpt = _excerpt(response)
+    status = response.status_code
+    if status in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
         return (
-            f"OpenRouter rejected the credentials (HTTP {response.status_code}). "
-            f"Check that OPENROUTER_API_KEY is valid and still active: {excerpt}"
+            f"OpenRouter rejected the credentials (HTTP {status}). Check that "
+            f"OPENROUTER_API_KEY is valid and still active: {excerpt}"
         )
-    if response.status_code == httpx.codes.PAYMENT_REQUIRED:
+    if status == httpx.codes.PAYMENT_REQUIRED:
         return (
-            "OpenRouter reports insufficient credits (HTTP 402). Top up your account "
-            f"at https://openrouter.ai/credits: {excerpt}"
+            "OpenRouter reports insufficient credits (HTTP 402). Top up your "
+            f"account at https://openrouter.ai/credits: {excerpt}"
         )
-    if response.status_code in (httpx.codes.BAD_REQUEST, httpx.codes.NOT_FOUND):
+    if status in (httpx.codes.BAD_REQUEST, httpx.codes.NOT_FOUND):
         return (
-            f"OpenRouter rejected the request (HTTP {response.status_code}). Check that "
-            f"the model '{config.model}' exists and accepts images: {excerpt}"
+            f"OpenRouter rejected the request (HTTP {status}). Check that the "
+            f"model '{model}' exists and accepts images: {excerpt}"
         )
-    return f"OpenRouter returned HTTP {response.status_code}: {excerpt}"
+    return f"OpenRouter returned HTTP {status}: {excerpt}"
 
 
-def _response_excerpt(response: httpx.Response) -> str:
+def _excerpt(response: httpx.Response) -> str:
     """Return a short, single-line excerpt of a response body for error messages."""
     return " ".join(response.text.split())[:_ERROR_BODY_CHARS]
 
@@ -220,8 +159,8 @@ def _response_excerpt(response: httpx.Response) -> str:
 def _retry_delay_seconds(*, response: httpx.Response | None, attempt: int) -> float:
     """Return how long to wait before the next attempt.
 
-    Honours the server's own hint when present, otherwise uses exponential backoff with
-    full jitter so concurrent workers do not all retry at the same instant.
+    Honours the server's own hint when present, otherwise uses exponential backoff
+    with full jitter so concurrent workers do not all retry at the same instant.
     """
     if response is not None:
         for header in ("retry-after", "x-ratelimit-reset-after"):
@@ -251,41 +190,14 @@ def _parse_retry_after(raw: str) -> float | None:
     return (parsed - datetime.now(timezone.utc)).total_seconds()
 
 
-def _extract_caption_text(body: object) -> str:
+def _extract_caption(body: object) -> str:
     """Extract the caption from a chat-completions response body.
-
-    Args:
-        body: The parsed JSON response.
-
-    Returns:
-        The caption text, stripped of surrounding whitespace.
 
     Raises:
         OpenRouterError: If the body carries an error or holds no usable caption.
     """
-    choice = _first_choice(body=body)
-    message = choice.get("message")
-    content = message.get("content") if isinstance(message, Mapping) else None
-    text = _content_to_text(content).strip()
-    if not text:
-        raise OpenRouterError("OpenRouter returned an empty caption.")
-
-    if choice.get("finish_reason") == "length":
-        logger.info("Caption was truncated by the max_tokens cap in settings.py.")
-    return text
-
-
-def _first_choice(*, body: object) -> Mapping[str, Any]:
-    """Return the first choice of a chat-completions body.
-
-    Raises:
-        OpenRouterError: If the body carries an error or holds no usable choice.
-    """
     if not isinstance(body, Mapping):
         raise OpenRouterError("Unexpected response shape from OpenRouter.")
-
-    # OpenRouter can return HTTP 200 with a top-level error object, for example when a
-    # provider blocks the request. Without this check those become empty captions.
     error = body.get("error")
     if error is not None:
         raise OpenRouterError(f"OpenRouter returned an error: {error}")
@@ -296,7 +208,15 @@ def _first_choice(*, body: object) -> Mapping[str, Any]:
     choice = choices[0]
     if not isinstance(choice, Mapping):
         raise OpenRouterError("Unexpected choice shape from OpenRouter.")
-    return choice
+
+    message = choice.get("message")
+    content = message.get("content") if isinstance(message, Mapping) else None
+    text = _content_to_text(content).strip()
+    if not text:
+        raise OpenRouterError("OpenRouter returned an empty caption.")
+    if choice.get("finish_reason") == "length":
+        logger.info("Caption was truncated by the MAX_TOKENS cap.")
+    return text
 
 
 def _content_to_text(content: object) -> str:
@@ -307,10 +227,9 @@ def _content_to_text(content: object) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        parts = [
+        return "\n".join(
             part["text"]
             for part in content
             if isinstance(part, Mapping) and isinstance(part.get("text"), str)
-        ]
-        return "\n".join(parts)
+        )
     return ""
