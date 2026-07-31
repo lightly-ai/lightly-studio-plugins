@@ -11,11 +11,9 @@ import contextlib
 import logging
 import statistics
 import time
-import uuid
 from collections.abc import Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from uuid import UUID
 
 import httpx
@@ -46,10 +44,6 @@ _JPEG_QUALITY = 85
 # Captions are flushed in batches so that a cancelled request keeps completed work.
 _DB_FLUSH_BATCH_SIZE = 200
 _THREAD_NAME_PREFIX = "openrouter-caption"
-# Identifies the run in OpenRouter's activity view, next to other tools on the same key.
-_SESSION_ID_PREFIX = "lightly-studio-captioning"
-_SESSION_ID_TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
-_SESSION_ID_SUFFIX_CHARS = 6
 
 
 @dataclass(frozen=True)
@@ -124,13 +118,11 @@ def caption_images(
     """
     tally = CaptionTally()
     pending: list[CaptionCreate] = []
-    session_id = new_session_id()
     logger.info(
-        "Captioning %d image(s) with %s at concurrency %d as OpenRouter session '%s'.",
+        "Captioning %d image(s) with %s at concurrency %d.",
         len(jobs),
         settings.model,
         settings.max_concurrency,
-        session_id,
     )
     started_at = time.monotonic()
     with contextlib.ExitStack() as stack:
@@ -142,7 +134,6 @@ def caption_images(
             jobs=jobs,
             settings=settings,
             api_key=api_key,
-            session_id=session_id,
         )
         for future in concurrent.futures.as_completed(futures):
             job = futures[future]
@@ -163,20 +154,6 @@ def caption_images(
     tally.elapsed_s = time.monotonic() - started_at
     _log_summary(tally=tally, total=len(jobs))
     return tally
-
-
-def new_session_id() -> str:
-    """Return an identifier that groups every request of one captioning run.
-
-    The identifier is built from a fixed prefix, a UTC start timestamp and a short random
-    suffix, for example `lightly-studio-captioning-20260729T150312Z-a1b2c3`. The prefix
-    tells the run apart from other tools sharing the API key, the timestamp makes runs
-    sortable and easy to match against when something happened, and the random suffix
-    keeps two runs started in the same second from being merged into one session.
-    """
-    started_at = datetime.now(timezone.utc).strftime(_SESSION_ID_TIMESTAMP_FORMAT)
-    suffix = uuid.uuid4().hex[:_SESSION_ID_SUFFIX_CHARS]
-    return f"{_SESSION_ID_PREFIX}-{started_at}-{suffix}"
 
 
 def store_captions(
@@ -214,16 +191,13 @@ def _submit(
     jobs: Sequence[CaptionJob],
     settings: CaptionSettings,
     api_key: str,
-    session_id: str,
 ) -> dict[Future[_CaptionResult], CaptionJob]:
     """Submit every job and return a mapping from future back to its job.
 
     The mapping is needed because a failure has to be reported against the image that
     caused it, which `as_completed` alone does not tell us.
     """
-    config = _build_request_config(
-        settings=settings, api_key=api_key, session_id=session_id
-    )
+    config = _build_request_config(settings=settings, api_key=api_key)
     return {
         pool.submit(
             _caption_one,
@@ -237,16 +211,15 @@ def _submit(
 
 
 def _build_request_config(
-    *, settings: CaptionSettings, api_key: str, session_id: str
+    *, settings: CaptionSettings, api_key: str
 ) -> OpenRouterRequestConfig:
     """Translate the run settings into an immutable request configuration."""
     return OpenRouterRequestConfig(
         api_key=api_key,
         model=settings.model,
         prompt=settings.prompt,
-        max_tokens=settings.max_tokens,
-        temperature=settings.temperature,
-        session_id=session_id,
+        max_tokens=settings_module.MAX_TOKENS,
+        temperature=settings_module.TEMPERATURE,
     )
 
 

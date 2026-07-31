@@ -27,9 +27,6 @@ _ERROR_BODY_CHARS = 300
 _REFERER = "https://lightly.ai"
 _TITLE = "LightlyStudio"
 
-SESSION_ID_MAX_LENGTH = 256
-"""Longest `session_id` OpenRouter accepts."""
-
 
 class OpenRouterError(RuntimeError):
     """Raised when OpenRouter does not return a usable caption."""
@@ -45,8 +42,6 @@ class OpenRouterRequestConfig:
         prompt: Instruction sent alongside each image.
         max_tokens: Upper bound on caption length in tokens.
         temperature: Sampling temperature.
-        session_id: Groups all requests of one run for observability, or empty to send
-            no grouping key. At most `SESSION_ID_MAX_LENGTH` characters.
     """
 
     api_key: str
@@ -54,7 +49,6 @@ class OpenRouterRequestConfig:
     prompt: str
     max_tokens: int
     temperature: float
-    session_id: str = ""
 
 
 def request_caption(
@@ -110,11 +104,6 @@ def _build_payload(
     # Many models are served by several providers at very different speeds. Sorting
     # disables load balancing and tries providers in the requested order instead.
     payload["provider"] = {"sort": settings.PROVIDER_SORT}
-    if config.session_id:
-        # Groups the whole run in OpenRouter's activity view. It doubles as a sticky
-        # routing key, which costs nothing here: captions share no cacheable prompt
-        # prefix, and `provider.sort` has already disabled load balancing.
-        payload["session_id"] = config.session_id[:SESSION_ID_MAX_LENGTH]
     return payload
 
 
@@ -282,9 +271,7 @@ def _extract_caption_text(body: object) -> str:
         raise OpenRouterError("OpenRouter returned an empty caption.")
 
     if choice.get("finish_reason") == "length":
-        logger.info(
-            "Caption was truncated by max_tokens; raise it for longer captions."
-        )
+        logger.info("Caption was truncated by the max_tokens cap in settings.py.")
     return text
 
 

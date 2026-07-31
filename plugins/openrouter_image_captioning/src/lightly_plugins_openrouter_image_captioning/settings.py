@@ -8,7 +8,6 @@ from typing import Any
 
 from lightly_studio.plugins.parameter import (
     BaseParameter,
-    FloatParameter,
     IntParameter,
     StringParameter,
 )
@@ -27,11 +26,14 @@ REQUEST_TIMEOUT = 60.0
 """Per-request timeout in seconds. Generous for a caption; a stall is handled by a retry."""
 MAX_RETRIES = 3
 """Retries per image on rate limits, server errors and network errors."""
+MAX_TOKENS = 200
+"""Upper bound on caption length in tokens. A cap, not a target: lowering it does not
+speed up a run, and the default is well above what the default prompt asks for."""
+TEMPERATURE = 0.2
+"""Sampling temperature. Low so that captions of similar images stay consistent."""
 
 PARAM_MODEL = "model"
 PARAM_PROMPT = "prompt"
-PARAM_MAX_TOKENS = "max_tokens"
-PARAM_TEMPERATURE = "temperature"
 PARAM_MAX_SAMPLES = "max_samples"
 PARAM_MAX_IMAGE_EDGE = "max_image_edge"
 PARAM_MAX_CONCURRENCY = "max_concurrency"
@@ -41,8 +43,6 @@ _DEFAULT_PROMPT = (
     "Describe this image in one or two concise sentences. Name the main objects, their "
     "notable attributes and the overall scene. Do not begin with 'The image shows'."
 )
-_DEFAULT_MAX_TOKENS = 200
-_DEFAULT_TEMPERATURE = 0.2
 _DEFAULT_MAX_SAMPLES = 200
 _DEFAULT_MAX_IMAGE_EDGE = 256
 _DEFAULT_MAX_CONCURRENCY = 16
@@ -62,8 +62,6 @@ class CaptionSettings:
     Attributes:
         model: OpenRouter slug of a vision-capable model.
         prompt: Instruction sent alongside each image.
-        max_tokens: Upper bound on caption length in tokens.
-        temperature: Sampling temperature.
         max_samples: Maximum images per run, or 0 for no limit.
         max_image_edge: Longest edge in pixels after downscaling, or 0 to not resize.
         max_concurrency: Number of images captioned in parallel.
@@ -71,8 +69,6 @@ class CaptionSettings:
 
     model: str
     prompt: str
-    max_tokens: int
-    temperature: float
     max_samples: int
     max_image_edge: int
     max_concurrency: int
@@ -95,23 +91,6 @@ def build_parameters() -> list[BaseParameter]:
             required=True,
             default=_DEFAULT_PROMPT,
             description="Instruction sent to the model together with the image.",
-        ),
-        IntParameter(
-            name=PARAM_MAX_TOKENS,
-            required=False,
-            default=_DEFAULT_MAX_TOKENS,
-            description=(
-                "Upper bound on caption length in tokens. This is a cap, not a target, "
-                "so lowering it does not speed up a run."
-            ),
-        ),
-        FloatParameter(
-            name=PARAM_TEMPERATURE,
-            required=False,
-            default=_DEFAULT_TEMPERATURE,
-            description=(
-                "Sampling temperature. Use 0.0 for the most reproducible captions."
-            ),
         ),
         IntParameter(
             name=PARAM_MAX_SAMPLES,
@@ -156,8 +135,8 @@ def read_settings(*, parameters: Mapping[str, Any]) -> CaptionSettings:
     Raises:
         ParameterError: If a value cannot be used.
     """
-    max_image_edge = _number(
-        parameters, PARAM_MAX_IMAGE_EDGE, _DEFAULT_MAX_IMAGE_EDGE, int, 0, 4096
+    max_image_edge = _read_int(
+        parameters, PARAM_MAX_IMAGE_EDGE, _DEFAULT_MAX_IMAGE_EDGE, 0, 4096
     )
     if 0 < max_image_edge < _MIN_USEFUL_IMAGE_EDGE:
         raise ParameterError(
@@ -168,18 +147,12 @@ def read_settings(*, parameters: Mapping[str, Any]) -> CaptionSettings:
     return CaptionSettings(
         model=_text(parameters, PARAM_MODEL, _DEFAULT_MODEL),
         prompt=_text(parameters, PARAM_PROMPT, _DEFAULT_PROMPT),
-        max_tokens=_number(
-            parameters, PARAM_MAX_TOKENS, _DEFAULT_MAX_TOKENS, int, 16, 4096
-        ),
-        temperature=_number(
-            parameters, PARAM_TEMPERATURE, _DEFAULT_TEMPERATURE, float, 0.0, 2.0
-        ),
-        max_samples=_number(
-            parameters, PARAM_MAX_SAMPLES, _DEFAULT_MAX_SAMPLES, int, 0, 100_000
+        max_samples=_read_int(
+            parameters, PARAM_MAX_SAMPLES, _DEFAULT_MAX_SAMPLES, 0, 100_000
         ),
         max_image_edge=max_image_edge,
-        max_concurrency=_number(
-            parameters, PARAM_MAX_CONCURRENCY, _DEFAULT_MAX_CONCURRENCY, int, 1, 64
+        max_concurrency=_read_int(
+            parameters, PARAM_MAX_CONCURRENCY, _DEFAULT_MAX_CONCURRENCY, 1, 64
         ),
     )
 
@@ -198,30 +171,24 @@ def _text(parameters: Mapping[str, Any], name: str, default: str) -> str:
     return value.strip() or default
 
 
-def _number(
+def _read_int(
     parameters: Mapping[str, Any],
     name: str,
-    default: Any,
-    kind: type,
-    minimum: Any,
-    maximum: Any,
-) -> Any:
-    """Read an int or float parameter and check it against its allowed range.
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    """Read an int parameter and check it against its allowed range.
 
     Raises:
-        ParameterError: If the value is not of the expected type or is out of range.
+        ParameterError: If the value is not a whole number or is out of range.
     """
     value = parameters.get(name)
     if value is None:
         value = default
     # bool is a subclass of int, so reject it before the isinstance check below.
-    elif isinstance(value, bool):
-        raise ParameterError(f"Parameter '{name}' must be a number.")
-    elif kind is float and isinstance(value, int):
-        value = float(value)
-    elif not isinstance(value, kind):
-        expected = "a whole number" if kind is int else "a number"
-        raise ParameterError(f"Parameter '{name}' must be {expected}.")
+    elif isinstance(value, bool) or not isinstance(value, int):
+        raise ParameterError(f"Parameter '{name}' must be a whole number.")
     if not minimum <= value <= maximum:
         raise ParameterError(
             f"Parameter '{name}' must be between {minimum} and {maximum}."
