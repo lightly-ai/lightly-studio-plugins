@@ -79,6 +79,33 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
   </details>
 
+- [CLIP Zero-Shot Classification](plugins/clip_zero_shot_classification/)  
+  Classifies images against a table of text prompts and the labels to assign, with no training.
+
+  <details>
+  <summary>Details</summary>
+
+  You define the class vocabulary in the GUI as rows of `prompt` and `label`, so
+  the label set is not fixed by a trained model. Each image is scored against
+  every prompt and receives the label of the best match.
+
+  - Scope: single image or images in the current view
+  - Input: table of text prompts and the label each prompt assigns
+  - Output: classification annotations, at most one per image
+  - Labels: taken from the `label` column, defaulting to the prompt text, and
+    created in the dataset if they do not exist yet
+  - Prompt ensembling: several rows may share a label, and their scores are
+    pooled with a max so extra phrasings strengthen a class instead of splitting it
+  - Recommended models:
+    `openai/clip-vit-base-patch16` (default) for a speed/quality balance,
+    `openai/clip-vit-base-patch32` for speed,
+    `openai/clip-vit-large-patch14` for better accuracy
+  - Maintainer: Lightly
+  - Install:
+    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/clip_zero_shot_classification/`
+
+  </details>
+
 - [LightlyTrain object detection inference](plugins/lightly_train_object_detection_inference/)  
   Runs LightlyTrain object detection inference on one image or the current view for auto-labeling.
 

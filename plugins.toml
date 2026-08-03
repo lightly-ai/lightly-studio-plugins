@@ -15,6 +15,14 @@ maintainer = "lightly"
 tags = ["auto-labeling", "segmentation"]
 
 [[plugins]]
+id = "lightly_plugins_clip_zero_shot_classification"
+name = "CLIP Zero-Shot Classification"
+description = "Classifies images with CLIP against a table of text prompts and the labels to assign"
+source = "local:plugins/clip_zero_shot_classification"
+maintainer = "lightly"
+tags = ["auto-labeling", "classification", "zero-shot"]
+
+[[plugins]]
 id = "lightly_plugins_lightly_train_object_detection_inference"
 name = "LightlyTrain object detection inference"
 description = "Runs LightlyTrain object detection inference on a single image or the current filtered image view"
