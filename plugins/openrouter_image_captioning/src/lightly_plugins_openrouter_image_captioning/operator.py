@@ -120,7 +120,6 @@ class OpenRouterImageCaptioningOperator(BaseOperator):
                 description=(
                     "OpenRouter API key, created at https://openrouter.ai/keys. Leave "
                     f"blank to use the {API_KEY_ENV_VAR} environment variable instead. "
-                    "Note that this field is not masked."
                 ),
             ),
             IntParameter(
