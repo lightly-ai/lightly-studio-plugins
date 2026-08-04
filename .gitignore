@@ -1,8 +1,0 @@
-__pycache__/
-*.egg-info/
-.mypy_cache/
-.ruff_cache/
-.venv/
-.env
-.vscode/
-uv.lock
