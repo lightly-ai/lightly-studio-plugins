@@ -69,8 +69,6 @@ _MISSING_KEY_MESSAGE = (
 class CaptionJob:
     """Session-free data needed to caption one image inside a worker thread.
 
-    Worker threads must not touch the session or any ORM object, so everything they
-    need is snapshotted into immutable values before the work is submitted.
     """
 
     sample_id: UUID
