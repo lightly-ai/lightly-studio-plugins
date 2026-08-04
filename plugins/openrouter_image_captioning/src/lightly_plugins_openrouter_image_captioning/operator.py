@@ -67,9 +67,7 @@ _MISSING_KEY_MESSAGE = (
 
 @dataclass(frozen=True)
 class CaptionJob:
-    """Session-free data needed to caption one image inside a worker thread.
-
-    """
+    """Session-free data needed to caption one image inside a worker thread."""
 
     sample_id: UUID
     file_path_abs: str
