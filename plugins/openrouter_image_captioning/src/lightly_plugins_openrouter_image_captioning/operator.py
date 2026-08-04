@@ -17,9 +17,9 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-import httpx
 import PIL.Image
 import PIL.ImageOps
+from httpx import Client, Limits
 from lightly_studio.models.caption import CaptionCreate
 from lightly_studio.plugins.base_operator import BaseOperator, OperatorResult
 from lightly_studio.plugins.operator_context import (
@@ -102,8 +102,8 @@ class OpenRouterImageCaptioningOperator(BaseOperator):
                 required=True,
                 default=_DEFAULT_MODEL,
                 description=(
-                    "OpenRouter model slug of a vision-capable model. Browse and "
-                    f"compare models at {MODELS_URL} (filter by image input)."
+                    "OpenRouter slug of a vision-capable model. Browse them at "
+                    f"{MODELS_URL} (filter by image input)."
                 ),
             ),
             StringParameter(
@@ -117,10 +117,8 @@ class OpenRouterImageCaptioningOperator(BaseOperator):
                 required=False,
                 default=_DEFAULT_MAX_IMAGE_EDGE,
                 description=(
-                    "Downscale images so the longest edge is at most this many pixels "
-                    "before upload. Lower is cheaper and faster, but fine detail is "
-                    "lost; raise it if captions miss small objects or text. 0 uploads "
-                    "the image at its original size."
+                    "Downscale images to this longest edge before upload. Lower is "
+                    "cheaper but loses fine detail. 0 keeps the original size."
                 ),
             ),
             IntParameter(
@@ -163,7 +161,7 @@ def _run(
     if not api_key:
         return OperatorResult(success=False, message=_MISSING_KEY_MESSAGE)
 
-    jobs = _find_jobs(
+    jobs = _load_caption_jobs(
         session=session,
         context=context,
         image_filter=_resolve_image_filter(context_filter=context.context_filter),
@@ -217,7 +215,7 @@ def _resolve_image_filter(*, context_filter: AnyFilter | None) -> ImageFilter | 
     return None
 
 
-def _find_jobs(
+def _load_caption_jobs(
     *, session: Session, context: ExecutionContext, image_filter: ImageFilter | None
 ) -> list[CaptionJob]:
     """Load the images in scope as session-free captioning jobs."""
@@ -249,7 +247,7 @@ def _caption_images(
         max_concurrency,
     )
     config = RequestConfig(api_key=api_key, model=model, prompt=prompt)
-    limits = httpx.Limits(
+    limits = Limits(
         max_connections=max_concurrency,
         max_keepalive_connections=max_concurrency,
     )
@@ -257,9 +255,7 @@ def _caption_images(
     pending: list[CaptionCreate] = []
 
     with (
-        httpx.Client(
-            timeout=openrouter_client.REQUEST_TIMEOUT, limits=limits
-        ) as client,
+        Client(timeout=openrouter_client.REQUEST_TIMEOUT, limits=limits) as client,
         ThreadPoolExecutor(
             max_workers=max_concurrency,
             thread_name_prefix="openrouter-caption",
@@ -297,7 +293,7 @@ def _caption_images(
 def _caption_one(
     *,
     job: CaptionJob,
-    client: httpx.Client,
+    client: Client,
     config: RequestConfig,
     max_image_edge: int,
 ) -> str:
