@@ -133,24 +133,6 @@ def _normalized_embeddings(features: Any) -> torch.Tensor:
     return normalized
 
 
-def _label_row_indices(labels: list[str]) -> dict[str, list[int]]:
-    """Group the row indices of the prompts table by label name.
-
-    Several rows may carry the same label to ensemble multiple prompts for one class, so a
-    label maps to every row index that declares it.
-
-    Args:
-        labels: The label of every prompt, in row order.
-
-    Returns:
-        A mapping from label name to the row indices carrying that label.
-    """
-    indices: dict[str, list[int]] = {}
-    for index, label in enumerate(labels):
-        indices.setdefault(label, []).append(index)
-    return indices
-
-
 @dataclass
 class ClipZeroShotClassificationOperator(BaseOperator):
     """Zero-shot image classification using CLIP driven by a table of prompts and labels."""
@@ -158,7 +140,7 @@ class ClipZeroShotClassificationOperator(BaseOperator):
     name: str = "CLIP Zero-Shot Classification"
     description: str = (
         "Classifies images with CLIP against a table of text prompts and the labels to "
-        "assign. Several prompts may share a label to ensemble them."
+        "assign."
     )
     _model: Any = dataclasses.field(default=None, init=False, repr=False)
     _processor: Any = dataclasses.field(default=None, init=False, repr=False)
@@ -183,7 +165,7 @@ class ClipZeroShotClassificationOperator(BaseOperator):
                 required=True,
                 description=(
                     "Text prompt to match against each image and the label to assign when "
-                    "it wins. Several rows may share a label to ensemble prompts."
+                    "it wins."
                 ),
                 columns=[
                     StringParameter(
@@ -362,19 +344,19 @@ class ClipZeroShotClassificationOperator(BaseOperator):
         except Exception as exc:
             return self._build_runtime_error_result(exc)
 
-        row_indices_by_label = _label_row_indices(labels)
         # `logit_scale` is a trainable parameter, so detach it to keep the scores out of the
         # autograd graph.
         logit_scale = self._model.logit_scale.detach().exp()
-        label_ids = {
-            label_name: _get_or_create_label(
+        # One label id per prompt row, so a row index maps straight to its label. Rows that
+        # repeat a label resolve to the same id.
+        label_ids = [
+            _get_or_create_label(
                 session=session,
                 dataset_id=collection.dataset_id,
                 label_name=label_name,
             )
-            for label_name in row_indices_by_label
-        }
-        label_names = list(row_indices_by_label)
+            for label_name in labels
+        ]
 
         annotations_to_create: list[AnnotationCreate] = []
         total_annotations_created = 0
@@ -403,23 +385,13 @@ class ClipZeroShotClassificationOperator(BaseOperator):
 
             try:
                 image_embeds = self._encode_images(images, device)
+                # Both embedding sets are L2-normalized, so the dot product is the cosine
+                # similarity.
                 similarities = image_embeds @ text_embeds.T
-                # Pool the prompt *similarities* per label by averaging them, which is the
-                # standard way to ensemble several prompts for one class. The softmax is
-                # then taken over labels rather than over prompts, so the resulting
-                # probabilities sum to one across labels and are directly comparable to
-                # the confidence threshold. Pooling after a softmax over prompts would
-                # instead split a class's probability mass across its own prompts, which
-                # both deflates its score and can hand the win to a single-prompt class.
-                label_similarities = torch.stack(
-                    [
-                        similarities[:, row_indices_by_label[label_name]].mean(dim=-1)
-                        for label_name in label_names
-                    ],
-                    dim=-1,
-                )
-                label_scores = (logit_scale * label_similarities).softmax(dim=-1)
-                best_scores, best_indices = label_scores.max(dim=-1)
+                # The softmax is over prompts, so the scores sum to one across the
+                # vocabulary and are directly comparable to the confidence threshold.
+                scores = (logit_scale * similarities).softmax(dim=-1)
+                best_scores, best_indices = scores.max(dim=-1)
             except Exception as exc:
                 return self._build_runtime_error_result(exc)
 
@@ -431,7 +403,7 @@ class ClipZeroShotClassificationOperator(BaseOperator):
                     continue
                 annotations_to_create.append(
                     AnnotationCreate(
-                        annotation_label_id=label_ids[label_names[best_index]],
+                        annotation_label_id=label_ids[best_index],
                         annotation_type=AnnotationType.CLASSIFICATION,
                         parent_sample_id=sample.sample_id,
                         confidence=float(best_score),
@@ -459,7 +431,7 @@ class ClipZeroShotClassificationOperator(BaseOperator):
 
         message = (
             f"Classified {total_annotations_created} of {len(samples)} samples into "
-            f"{len(label_names)} labels."
+            f"{len(set(labels))} labels."
         )
         if skipped_below_threshold:
             message += f" {skipped_below_threshold} below threshold."

@@ -49,14 +49,6 @@ Any CLIP checkpoint on HuggingFace that loads with `CLIPModel` works. Larger mod
 
 Add and remove rows in the GUI to define your classes. Prompt wording matters for CLIP — `"a photo of a dog"` typically works better than a bare `"dog"`.
 
-**Several rows may share a label** to ensemble multiple prompts for one class. The scores of rows sharing a label are pooled with a max, so extra phrasings strengthen the class instead of splitting it:
-
-| prompt | label |
-|---|---|
-| `a photo of a dog` | `dog` |
-| `a dog in a park` | `dog` |
-| `a photo of a cat` | `cat` |
-
 ## Notes
 
 - **Cover your data with the vocabulary.** By far the most common cause of bad results is a

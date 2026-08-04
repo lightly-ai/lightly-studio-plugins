@@ -94,8 +94,6 @@ Each plugin entry below includes the exact copy-paste install command. After ins
   - Output: classification annotations, at most one per image
   - Labels: taken from the `label` column, defaulting to the prompt text, and
     created in the dataset if they do not exist yet
-  - Prompt ensembling: several rows may share a label, and their scores are
-    pooled with a max so extra phrasings strengthen a class instead of splitting it
   - Recommended models:
     `openai/clip-vit-base-patch16` (default) for a speed/quality balance,
     `openai/clip-vit-base-patch32` for speed,
