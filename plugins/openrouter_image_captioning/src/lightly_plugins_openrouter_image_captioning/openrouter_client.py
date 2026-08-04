@@ -132,8 +132,8 @@ def _error_message(*, response: httpx.Response, model: str) -> str:
     status = response.status_code
     if status in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
         return (
-            f"OpenRouter rejected the credentials (HTTP {status}). Check that "
-            f"OPENROUTER_API_KEY is valid and still active: {excerpt}"
+            f"OpenRouter rejected the credentials (HTTP {status}). Check that the "
+            f"OpenRouter API key is valid and still active: {excerpt}"
         )
     if status == httpx.codes.PAYMENT_REQUIRED:
         return (

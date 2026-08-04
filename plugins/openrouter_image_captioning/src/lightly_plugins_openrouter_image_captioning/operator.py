@@ -59,9 +59,9 @@ _JPEG_QUALITY = 85
 _DB_FLUSH_BATCH_SIZE = 200
 
 _MISSING_KEY_MESSAGE = (
-    f"{API_KEY_ENV_VAR} is not set. Create a key at https://openrouter.ai/keys, "
-    "export it (or put it in a .env file where you start LightlyStudio) and restart "
-    "LightlyStudio."
+    "No OpenRouter API key. Create one at https://openrouter.ai/keys, then either fill "
+    f"in the 'api_key' parameter, or set {API_KEY_ENV_VAR} (an .env file where you "
+    "start LightlyStudio works too) and restart LightlyStudio."
 )
 
 
@@ -91,7 +91,8 @@ class OpenRouterImageCaptioningOperator(BaseOperator):
     name: str = "OpenRouter Image Captioning"
     description: str = (
         "Captions images with a vision model via OpenRouter and stores the result as a "
-        "LightlyStudio caption. Requires the OPENROUTER_API_KEY environment variable."
+        "LightlyStudio caption. Needs an OpenRouter API key, passed either as the "
+        f"'api_key' parameter or through the {API_KEY_ENV_VAR} environment variable."
     )
 
     @property
@@ -111,6 +112,16 @@ class OpenRouterImageCaptioningOperator(BaseOperator):
                 required=True,
                 default=_DEFAULT_PROMPT,
                 description="Instruction sent to the model together with the image.",
+            ),
+            StringParameter(
+                name="api_key",
+                required=False,
+                default="",
+                description=(
+                    "OpenRouter API key, created at https://openrouter.ai/keys. Leave "
+                    f"blank to use the {API_KEY_ENV_VAR} environment variable instead. "
+                    "Note that this field is not masked."
+                ),
             ),
             IntParameter(
                 name="max_image_edge",
@@ -157,15 +168,11 @@ def _run(
     *, session: Session, context: ExecutionContext, parameters: dict[str, Any]
 ) -> OperatorResult:
     """Caption the images in scope and report what happened."""
-    api_key = os.environ.get(API_KEY_ENV_VAR, "").strip()
+    api_key = _resolve_api_key(parameters)
     if not api_key:
         return OperatorResult(success=False, message=_MISSING_KEY_MESSAGE)
 
-    jobs = _load_caption_jobs(
-        session=session,
-        context=context,
-        image_filter=_resolve_image_filter(context_filter=context.context_filter),
-    )
+    jobs = _load_caption_jobs(session=session, context=context)
     if not jobs:
         return OperatorResult(
             success=True, message="No images to caption in the current view."
@@ -182,6 +189,17 @@ def _run(
         api_key=api_key,
     )
     return _build_result(tally=tally)
+
+
+def _resolve_api_key(parameters: Mapping[str, Any]) -> str:
+    """Return the API key from the operator form, else from the environment.
+
+    The form field wins so that a key pasted for this run overrides a stale exported
+    one without restarting LightlyStudio.
+    """
+    return (
+        _text(parameters, "api_key", "") or os.environ.get(API_KEY_ENV_VAR, "").strip()
+    )
 
 
 def _text(parameters: Mapping[str, Any], name: str, default: str) -> str:
@@ -216,11 +234,13 @@ def _resolve_image_filter(*, context_filter: AnyFilter | None) -> ImageFilter | 
 
 
 def _load_caption_jobs(
-    *, session: Session, context: ExecutionContext, image_filter: ImageFilter | None
+    *, session: Session, context: ExecutionContext
 ) -> list[CaptionJob]:
     """Load the images in scope as session-free captioning jobs."""
     result = image_resolver.get_all_by_collection_id(
-        session=session, collection_id=context.collection_id, filters=image_filter
+        session=session,
+        collection_id=context.collection_id,
+        filters=_resolve_image_filter(context_filter=context.context_filter),
     )
     return [
         CaptionJob(sample_id=sample.sample_id, file_path_abs=sample.file_path_abs)
