@@ -31,6 +31,14 @@ maintainer = "lightly"
 tags = ["auto-labeling", "object-detection", "inference"]
 
 [[plugins]]
+id = "lightly_plugins_yoloe_object_detection"
+name = "YOLOE Open Vocabulary Object Detection"
+description = "Runs YOLOE inference and adds bounding box or instance segmentation annotations to a single image or the current filtered image view"
+source = "local:plugins/yoloe_object_detection"
+maintainer = "lightly"
+tags = ["auto-labeling", "object-detection", "segmentation", "inference"]
+
+[[plugins]]
 id = "lightly_plugins_kitti_export_object_detection"
 name = "KITTI object detection export"
 description = "Exports KITTI object-detection label files"
