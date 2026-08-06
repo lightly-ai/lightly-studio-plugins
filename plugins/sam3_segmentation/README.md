@@ -48,5 +48,4 @@ If CUDA is not available, the plugin will run on CPU automatically.
   - unticked (default): `segmentation_mask` annotations carrying the mask *and* its bounding box.
   - ticked: `object_detection` annotations with a bounding box.
 - A `segmentation_mask` annotation always stores its bounding box. So the default already gives you mask *and* box on a single annotation. Tick `bounding_boxes_only` only when you want plain detections without the mask.
-- With `bounding_boxes_only` ticked, the masks are never run-length encoded, which makes those runs meaningfully faster.
 - Annotations are written to the collection given by `collection_name`.
