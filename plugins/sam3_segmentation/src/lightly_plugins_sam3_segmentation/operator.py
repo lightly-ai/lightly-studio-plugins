@@ -101,11 +101,7 @@ class SAM3SegmentationOperator(BaseOperator):
                 name=PARAM_BOUNDING_BOXES_ONLY,
                 required=False,
                 default=False,
-                description=(
-                    "Store plain bounding boxes instead of instance segmentation "
-                    "masks. Leave unticked to store masks, which carry their "
-                    "bounding box too."
-                ),
+                description="Store bounding boxes instead of segmentation masks.",
             ),
             StringParameter(
                 name=PARAM_COLLECTION_NAME,
