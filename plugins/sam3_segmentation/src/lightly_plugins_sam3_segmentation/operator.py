@@ -66,7 +66,7 @@ def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) ->
 class SAM3SegmentationOperator(BaseOperator):
     """Instance segmentation using SAM3 driven by a text prompt."""
 
-    name: str = "SAM3 Segmentation"
+    name: str = "SAM3"
     description: str = (
         "Automatic instance segmentation using SAM3 (facebook/sam3). "
         "Requires HuggingFace access — authenticate with `hf auth login` first."
