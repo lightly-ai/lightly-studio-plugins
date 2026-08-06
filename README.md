@@ -30,9 +30,9 @@ A collection of installable plugins that extend the base functionality of [Light
 
 Each plugin in this repository is packaged independently, installs in a single command, and is auto-discovered by Lightly Studio via Python entry points.
 
-![SAM3 Segmentation Plugin](plugins/sam3_segmentation/sam3_plugin.gif)
+![SAM3 Plugin](plugins/sam3_segmentation/sam3_plugin.gif)
 
-<p align="center"><em>SAM3 Segmentation Plugin</em></p>
+<p align="center"><em>SAM3 Plugin</em></p>
 
 Each plugin entry below includes the exact copy-paste install command. After installation, the plugin is available in Lightly Studio automatically.
 
@@ -59,7 +59,7 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
   </details>
 
-- [SAM3 Segmentation](plugins/sam3_segmentation/)  
+- [SAM3](plugins/sam3_segmentation/)  
   Segments all instances matching a text prompt in a single image or across the current view.
 
   <details>
@@ -70,7 +70,7 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
   - Scope: single image or images in the current view
   - Input: text prompt
-  - Output: segmentation masks
+  - Output: segmentation masks, or bounding boxes only
   - Labels: the prompt text is used as the annotation class name
   - Requirement: Hugging Face access to `facebook/sam3`
   - Maintainer: Lightly

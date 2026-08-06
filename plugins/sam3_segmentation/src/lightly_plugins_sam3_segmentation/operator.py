@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 from uuid import UUID
 
 import PIL.Image
@@ -24,6 +24,7 @@ from lightly_studio.resolvers.image_filter import ImageFilter
 from lightly_studio.resolvers.sample_resolver.sample_filter import SampleFilter
 from lightly_studio.plugins.parameter import (
     BaseParameter,
+    BoolParameter,
     FloatParameter,
     StringParameter,
 )
@@ -39,11 +40,12 @@ from lightly_plugins_sam3_segmentation.utils import prepare_segmentation_entries
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL_ID = "facebook/sam3"
-_SEGMENTATION_ANNOTATION_TYPE: AnnotationType = cast(
-    AnnotationType,
-    getattr(AnnotationType, "SEGMENTATION_MASK", None)
-    or getattr(AnnotationType, "INSTANCE_SEGMENTATION"),
-)
+
+PARAM_MODEL_ID = "model_id"
+PARAM_PROMPT = "prompt"
+PARAM_CONFIDENCE_THRESHOLD = "confidence_threshold"
+PARAM_BOUNDING_BOXES_ONLY = "bounding_boxes_only"
+PARAM_COLLECTION_NAME = "collection_name"
 
 
 def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
@@ -64,7 +66,7 @@ def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) ->
 class SAM3SegmentationOperator(BaseOperator):
     """Instance segmentation using SAM3 driven by a text prompt."""
 
-    name: str = "SAM3 Segmentation"
+    name: str = "SAM3"
     description: str = (
         "Automatic instance segmentation using SAM3 (facebook/sam3). "
         "Requires HuggingFace access — authenticate with `hf auth login` first."
@@ -78,25 +80,31 @@ class SAM3SegmentationOperator(BaseOperator):
     def parameters(self) -> list[BaseParameter]:
         return [
             StringParameter(
-                name="model_id",
+                name=PARAM_MODEL_ID,
                 required=True,
                 default=_DEFAULT_MODEL_ID,
                 description="HuggingFace model ID (e.g. 'facebook/sam3' or 'facebook/sam3.1')",
             ),
             StringParameter(
-                name="prompt",
+                name=PARAM_PROMPT,
                 required=True,
                 default="person",
                 description="Text prompt describing what to segment (e.g. 'person', 'car')",
             ),
             FloatParameter(
-                name="confidence_threshold",
+                name=PARAM_CONFIDENCE_THRESHOLD,
                 required=False,
                 default=0.5,
                 description="Minimum confidence score for keeping a prediction",
             ),
+            BoolParameter(
+                name=PARAM_BOUNDING_BOXES_ONLY,
+                required=False,
+                default=False,
+                description="Store bounding boxes instead of segmentation masks.",
+            ),
             StringParameter(
-                name="collection_name",
+                name=PARAM_COLLECTION_NAME,
                 required=True,
                 default="SAM3_auto_label",
                 description="The target annotation collection name.",
@@ -141,17 +149,20 @@ class SAM3SegmentationOperator(BaseOperator):
         context: ExecutionContext,
         parameters: dict[str, Any],
     ) -> OperatorResult:
-        model_id: str = parameters.get("model_id", _DEFAULT_MODEL_ID)
-        prompt_value = parameters.get("prompt")
+        model_id: str = parameters.get(PARAM_MODEL_ID, _DEFAULT_MODEL_ID)
+        prompt_value = parameters.get(PARAM_PROMPT)
         if prompt_value is None:
             return OperatorResult(
                 success=False,
                 message="Please provide a prompt.",
             )
         prompt: str = prompt_value
-        confidence_threshold: float = parameters.get("confidence_threshold", 0.5)
+        confidence_threshold: float = parameters.get(PARAM_CONFIDENCE_THRESHOLD, 0.5)
+
+        bounding_boxes_only = bool(parameters.get(PARAM_BOUNDING_BOXES_ONLY, False))
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        collection_name_value = parameters.get("collection_name")
+        collection_name_value = parameters.get(PARAM_COLLECTION_NAME)
         if collection_name_value is None:
             return OperatorResult(
                 success=False,
@@ -219,6 +230,7 @@ class SAM3SegmentationOperator(BaseOperator):
                 masks=detections["masks"],
                 scores=detections["scores"],
                 image_size=(sample.width, sample.height),
+                include_rle=not bounding_boxes_only,
             )
             for entry in entries:
                 raw_detections.append((sample, entry))
@@ -233,13 +245,21 @@ class SAM3SegmentationOperator(BaseOperator):
             session=session, dataset_id=collection.dataset_id, label_name=prompt
         )
 
+        # A segmentation annotation carries its bounding box as well, so storing
+        # masks already covers both. Boxes-only drops the mask on purpose.
+        annotation_type = (
+            AnnotationType.OBJECT_DETECTION
+            if bounding_boxes_only
+            else AnnotationType.SEGMENTATION_MASK
+        )
+
         annotation_creates: list[AnnotationCreate] = []
         for sample, entry in raw_detections:
             x, y, w, h = entry["box"]
             annotation_creates.append(
                 AnnotationCreate(
                     annotation_label_id=label_id,
-                    annotation_type=_SEGMENTATION_ANNOTATION_TYPE,
+                    annotation_type=annotation_type,
                     parent_sample_id=sample.sample_id,
                     confidence=entry["score"],
                     x=x,
