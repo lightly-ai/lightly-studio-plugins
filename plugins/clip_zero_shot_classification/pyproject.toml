@@ -7,9 +7,11 @@ dependencies = [
     "lightly_studio>=1.0.4",
     "sqlmodel",
     "torch",
-    # For why to avoid transformers 5.10, see
+    # The range spans the 4.x/5.x major boundary, where `get_*_features` changed its return
+    # type (see `_normalized_embeddings`), so the resolved major is pinned to keep loads
+    # reproducible. For why to avoid transformers 5.10, see
     # https://github.com/huggingface/transformers/issues/46402
-    "transformers>=4.57.2,<5.10",
+    "transformers>=5.9,<5.10",
     "Pillow",
 ]
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -40,8 +41,15 @@ _DEFAULT_MODEL_ID = "openai/clip-vit-base-patch16"
 _DEFAULT_CONFIDENCE = 0.0
 _DEFAULT_COLLECTION_NAME = "clip_zero_shot"
 
+# `from_pretrained` spawns a background thread asking the HuggingFace converter bot for a
+# safetensors copy whenever it resolves `.bin` weights, which reaches the Hub even when the
+# model is fully cached and is not suppressed by `local_files_only`. Models whose main
+# revision has no safetensors, such as the default one, would otherwise make those requests
+# on every single load.
+_DISABLE_CONVERSION_ENV = "DISABLE_SAFETENSORS_CONVERSION"
+
 # Number of images encoded in a single CLIP forward pass.
-_INFERENCE_BATCH_SIZE = 32
+_INFERENCE_BATCH_SIZE = 8
 # Number of annotations buffered before they are written to the database.
 _WRITE_BATCH_SIZE = 100
 
@@ -209,7 +217,15 @@ class ClipZeroShotClassificationOperator(BaseOperator):
         return [OperatorScope.IMAGE]
 
     def _load_model(self, model_id: str, device: str) -> None:
-        """Load the CLIP model and processor, reusing an already loaded model."""
+        """Load the CLIP model and processor, reusing an already loaded model.
+
+        A bare repo id makes `from_pretrained` revalidate the cache against the Hub on every
+        call, which costs a round trip per weight-file candidate even when nothing has to be
+        downloaded. The cache is therefore tried offline first, falling back to a networked
+        load when the model is missing locally or only partially cached. The safetensors
+        conversion request described on `_DISABLE_CONVERSION_ENV` is suppressed around both
+        attempts, since it reaches the Hub on the download path too.
+        """
         if (
             self._model is not None
             and self._model_device == device
@@ -218,10 +234,48 @@ class ClipZeroShotClassificationOperator(BaseOperator):
             return
 
         logger.info("Loading CLIP model (%s) on device: %s", model_id, device)
-        self._model = CLIPModel.from_pretrained(model_id).to(device).eval()  # type: ignore[arg-type]
-        self._processor = CLIPProcessor.from_pretrained(model_id)
+        previous_conversion_env = os.environ.get(_DISABLE_CONVERSION_ENV)
+        os.environ[_DISABLE_CONVERSION_ENV] = "1"
+        try:
+            try:
+                model, processor = self._from_pretrained(
+                    model_id, local_files_only=True
+                )
+            except OSError:
+                logger.info("Model (%s) not cached locally, downloading.", model_id)
+                model, processor = self._from_pretrained(
+                    model_id, local_files_only=False
+                )
+        finally:
+            if previous_conversion_env is None:
+                os.environ.pop(_DISABLE_CONVERSION_ENV, None)
+            else:
+                os.environ[_DISABLE_CONVERSION_ENV] = previous_conversion_env
+
+        self._model = model.to(device).eval()
+        self._processor = processor
         self._model_device = device
         self._loaded_model_id = model_id
+
+    @staticmethod
+    def _from_pretrained(model_id: str, *, local_files_only: bool) -> tuple[Any, Any]:
+        """Load the CLIP model and processor, either from the cache only or from the Hub.
+
+        Args:
+            model_id: HuggingFace CLIP model ID.
+            local_files_only: Whether to restrict the load to already cached files.
+
+        Returns:
+            The model and its processor. The model is not moved to a device yet.
+
+        Raises:
+            OSError: If `local_files_only` is set and the model is not fully cached.
+        """
+        model = CLIPModel.from_pretrained(model_id, local_files_only=local_files_only)
+        processor = CLIPProcessor.from_pretrained(
+            model_id, local_files_only=local_files_only
+        )
+        return model, processor
 
     def _encode_prompts(self, prompts: list[str], device: str) -> torch.Tensor:
         """Encode the prompts into normalized CLIP text embeddings.
