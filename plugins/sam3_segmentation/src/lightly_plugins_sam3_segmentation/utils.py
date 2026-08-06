@@ -29,6 +29,7 @@ def prepare_segmentation_entries(
     masks: Any,
     scores: Any,
     image_size: tuple[int, int],
+    include_rle: bool = True,
 ) -> list[dict[str, Any]]:
     """Convert SAM3 post-processed outputs to annotation-ready entries.
 
@@ -37,24 +38,27 @@ def prepare_segmentation_entries(
         masks: Tensor (N, H, W) boolean masks.
         scores: Tensor (N,) confidence scores.
         image_size: (width, height) of the source image.
+        include_rle: Whether to encode the masks. Set to False when only bounding
+            boxes are stored, to skip the run-length encoding of every mask.
 
     Returns:
-        List of dicts with keys 'box' (x, y, w, h), 'score' (float),
-        and 'rle' (list[int] row-wise run-length encoding).
+        List of dicts with keys 'box' (x, y, w, h), 'score' (float), and 'rle'
+        (list[int] row-wise run-length encoding, None when `include_rle` is False).
     """
     img_w, img_h = image_size
     entries = []
     for box, mask, score in zip(boxes, masks, scores):
         x, y, w, h = _clamp_xyxy_to_xywh(box, img_w, img_h)
-        binary_mask: NDArray[np.int_] = mask.cpu().numpy().astype(np.int_)
-        bounding_box = BoundingBox(
-            xmin=float(x),
-            ymin=float(y),
-            xmax=float(x + w),
-            ymax=float(y + h),
-        )
-        seg = BinaryMaskSegmentation.from_binary_mask(binary_mask, bounding_box)
-        entries.append(
-            {"box": (x, y, w, h), "score": float(score), "rle": seg.get_rle()}
-        )
+        rle: list[int] | None = None
+        if include_rle:
+            binary_mask: NDArray[np.int_] = mask.cpu().numpy().astype(np.int_)
+            bounding_box = BoundingBox(
+                xmin=float(x),
+                ymin=float(y),
+                xmax=float(x + w),
+                ymax=float(y + h),
+            )
+            seg = BinaryMaskSegmentation.from_binary_mask(binary_mask, bounding_box)
+            rle = seg.get_rle()
+        entries.append({"box": (x, y, w, h), "score": float(score), "rle": rle})
     return entries

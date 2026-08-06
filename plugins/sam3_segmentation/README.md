@@ -39,4 +39,14 @@ If CUDA is not available, the plugin will run on CPU automatically.
 | `model_id` | string | `"facebook/sam3"` | HuggingFace model ID — `facebook/sam3` or `facebook/sam3.1` |
 | `prompt` | string | `"person"` | Text describing what to segment (e.g. `"car"`, `"dog"`) |
 | `confidence_threshold` | float | `0.5` | Minimum score to keep a prediction |
+| `bounding_boxes_only` | bool | `false` | Store plain bounding boxes instead of instance segmentation masks |
 | `collection_name` | string | `"SAM3_auto_label"` | Target annotation collection for generated segmentations. Override this to store the results in a different collection. |
+
+## Notes
+
+- SAM3 computes masks and boxes together. `bounding_boxes_only` selects which of the two is stored, not what the model computes. One annotation is created per detected object either way:
+  - unticked (default) → `segmentation_mask` annotations carrying the mask *and* its bounding box, so no detail is lost.
+  - ticked → `object_detection` annotations with a bounding box only.
+- A `segmentation_mask` annotation always stores its bounding box, and Studio draws that box over the mask by default (the "Show Bounding Boxes for Segmentation" setting). So the default already gives you mask *and* box on a single annotation — tick `bounding_boxes_only` only when you want plain detections without the mask.
+- With `bounding_boxes_only` ticked, the masks are never run-length encoded, which makes those runs meaningfully faster.
+- Annotations are written to the collection given by `collection_name`.
