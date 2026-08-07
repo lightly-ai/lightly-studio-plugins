@@ -126,8 +126,8 @@ class SAM3SegmentationOperator(BaseOperator):
                 name=PARAM_PROMPTS,
                 required=True,
                 description=(
-                    "Text prompts to segment with and the label to assign to each "
-                    "prompt's detections. One prompt per row."
+                    "One prompt per row. Detections are annotated with the row's "
+                    "label, or with the prompt if the label is empty."
                 ),
                 columns=[
                     StringParameter(
@@ -137,16 +137,13 @@ class SAM3SegmentationOperator(BaseOperator):
                     StringParameter(
                         name=COLUMN_LABEL,
                         description=(
-                            "Label assigned to this prompt's detections. Defaults to "
-                            "the prompt itself."
+                            "Annotation label for this prompt's detections. "
+                            "Leave empty to use the prompt."
                         ),
                         required=False,
                     ),
                 ],
-                default=[
-                    {COLUMN_PROMPT: "person", COLUMN_LABEL: "person"},
-                    {COLUMN_PROMPT: "car", COLUMN_LABEL: "car"},
-                ],
+                default=[{COLUMN_PROMPT: "person", COLUMN_LABEL: "person"}],
             ),
             FloatParameter(
                 name=PARAM_CONFIDENCE_THRESHOLD,
