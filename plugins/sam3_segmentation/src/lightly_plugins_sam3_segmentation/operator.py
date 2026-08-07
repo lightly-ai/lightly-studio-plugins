@@ -60,11 +60,7 @@ class PromptRow(NamedTuple):
 
 
 def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
-    """Read the prompt table, which reaches the operator unvalidated.
-
-    Malformed rows and rows with an empty prompt are skipped; an empty label falls back
-    to the prompt.
-    """
+    """Read the prompt table, which reaches the operator unvalidated."""
     if not isinstance(rows, list):
         return []
 
@@ -81,11 +77,7 @@ def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
 
 
 def _select_device() -> str:
-    """Pick the fastest device SAM3 can run on.
-
-    MPS stays at float32: float16 is faster but shifts scores enough to flip predictions
-    at the confidence threshold.
-    """
+    """Pick the fastest device SAM3 can run on."""
     if torch.cuda.is_available():
         return "cuda"
     if torch.backends.mps.is_available():
@@ -206,11 +198,7 @@ class SAM3SegmentationOperator(BaseOperator):
         confidence_threshold: float,
         include_rle: bool,
     ) -> list[tuple[str, dict[str, Any]]]:
-        """Segment one image with every prompt, returning (label, detection) pairs.
-
-        The vision encoder ignores the prompt, so it runs once per image and its features
-        are reused for every prompt.
-        """
+        """Segment one image with every prompt, returning (label, detection) pairs."""
         width, height = image_size
         device = self._model_device
         detections: list[tuple[str, dict[str, Any]]] = []
@@ -226,7 +214,6 @@ class SAM3SegmentationOperator(BaseOperator):
                     device
                 )
                 outputs = self._model(vision_embeds=vision_embeds, **text_inputs)
-                # Takes (height, width); `prepare_segmentation_entries` takes (width, height).
                 result = self._processor.post_process_instance_segmentation(
                     outputs,
                     threshold=confidence_threshold,
@@ -338,7 +325,6 @@ class SAM3SegmentationOperator(BaseOperator):
                 message="Segmentation complete. No annotations created.",
             )
 
-        # Rows sharing a label merge into one annotation class.
         label_ids = {
             row.label: _get_or_create_label(
                 session=session, dataset_id=collection.dataset_id, label_name=row.label
