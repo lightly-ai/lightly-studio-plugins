@@ -27,6 +27,7 @@ from lightly_studio.plugins.parameter import (
     BoolParameter,
     FloatParameter,
     StringParameter,
+    TableParameter,
 )
 from lightly_studio.resolvers import (
     annotation_label_resolver,
@@ -47,6 +48,41 @@ PARAM_CONFIDENCE_THRESHOLD = "confidence_threshold"
 PARAM_BOUNDING_BOXES_ONLY = "bounding_boxes_only"
 PARAM_COLLECTION_NAME = "collection_name"
 
+COLUMN_PROMPT = "prompt"
+COLUMN_LABEL = "label"
+
+
+def _parse_prompt_rows(rows: Any) -> tuple[list[str], list[str]]:
+    """Extract the prompt and label of every usable row of the prompt table.
+
+    The rows are not validated against the declared parameters before they reach the
+    operator, so they are read defensively here. Rows that are malformed or carry an empty
+    prompt are skipped. An empty label falls back to the prompt itself, since the label
+    column is optional.
+
+    Args:
+        rows: The raw value of the prompt table parameter.
+
+    Returns:
+        The prompts and their labels as two parallel lists.
+    """
+    prompts: list[str] = []
+    labels: list[str] = []
+    if not isinstance(rows, list):
+        return prompts, labels
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        prompt = str(row.get(COLUMN_PROMPT, "")).strip()
+        if not prompt:
+            continue
+        label = str(row.get(COLUMN_LABEL, "")).strip() or prompt
+        prompts.append(prompt)
+        labels.append(label)
+
+    return prompts, labels
+
 
 def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
     label = annotation_label_resolver.get_by_label_name(
@@ -64,11 +100,12 @@ def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) ->
 
 @dataclass
 class SAM3SegmentationOperator(BaseOperator):
-    """Instance segmentation using SAM3 driven by a text prompt."""
+    """Instance segmentation using SAM3 driven by a table of prompts and labels."""
 
     name: str = "SAM3"
     description: str = (
-        "Automatic instance segmentation using SAM3 (facebook/sam3). "
+        "Automatic instance segmentation using SAM3 (facebook/sam3) against a table of "
+        "text prompts and the labels to assign. "
         "Requires HuggingFace access — authenticate with `hf auth login` first."
     )
     _model: Any = dataclasses.field(default=None, init=False, repr=False)
@@ -85,11 +122,31 @@ class SAM3SegmentationOperator(BaseOperator):
                 default=_DEFAULT_MODEL_ID,
                 description="HuggingFace model ID (e.g. 'facebook/sam3' or 'facebook/sam3.1')",
             ),
-            StringParameter(
+            TableParameter(
                 name=PARAM_PROMPT,
                 required=True,
-                default="person",
-                description="Text prompt describing what to segment (e.g. 'person', 'car')",
+                description=(
+                    "Text prompt to segment with and the label to assign to its "
+                    "detections. One prompt per row."
+                ),
+                columns=[
+                    StringParameter(
+                        name=COLUMN_PROMPT,
+                        description="What to segment, e.g. 'person'.",
+                    ),
+                    StringParameter(
+                        name=COLUMN_LABEL,
+                        description=(
+                            "Label assigned to this prompt's detections. Defaults to "
+                            "the prompt itself."
+                        ),
+                        required=False,
+                    ),
+                ],
+                default=[
+                    {COLUMN_PROMPT: "person", COLUMN_LABEL: "person"},
+                    {COLUMN_PROMPT: "car", COLUMN_LABEL: "car"},
+                ],
             ),
             FloatParameter(
                 name=PARAM_CONFIDENCE_THRESHOLD,
@@ -150,13 +207,12 @@ class SAM3SegmentationOperator(BaseOperator):
         parameters: dict[str, Any],
     ) -> OperatorResult:
         model_id: str = parameters.get(PARAM_MODEL_ID, _DEFAULT_MODEL_ID)
-        prompt_value = parameters.get(PARAM_PROMPT)
-        if prompt_value is None:
+        prompts, labels = _parse_prompt_rows(parameters.get(PARAM_PROMPT))
+        if not prompts:
             return OperatorResult(
                 success=False,
-                message="Please provide a prompt.",
+                message="Please provide at least one prompt.",
             )
-        prompt: str = prompt_value
         confidence_threshold: float = parameters.get(PARAM_CONFIDENCE_THRESHOLD, 0.5)
 
         bounding_boxes_only = bool(parameters.get(PARAM_BOUNDING_BOXES_ONLY, False))
@@ -198,7 +254,8 @@ class SAM3SegmentationOperator(BaseOperator):
         except Exception as exc:
             return self._build_runtime_error_result(exc)
 
-        raw_detections: list[tuple[Any, Any]] = []  # (sample, entry)
+        # (sample, prompt_index, entry)
+        raw_detections: list[tuple[Any, int, Any]] = []
         for sample in samples:
             try:
                 with PIL.Image.open(sample.file_path_abs) as opened_image:
@@ -209,31 +266,37 @@ class SAM3SegmentationOperator(BaseOperator):
                 )
                 continue
 
-            try:
-                inputs = self._processor(images=image, text=prompt, return_tensors="pt")
-                inputs = {k: v.to(device) for k, v in inputs.items()}
+            # SAM3 ties one text prompt to one forward pass: the processor pads `text` to a
+            # fixed length and treats a list as one entry per batch element, so prompts
+            # cannot be batched against a single image without losing the per-prompt split.
+            for prompt_index, prompt in enumerate(prompts):
+                try:
+                    inputs = self._processor(
+                        images=image, text=prompt, return_tensors="pt"
+                    )
+                    inputs = {k: v.to(device) for k, v in inputs.items()}
 
-                with torch.no_grad():
-                    outputs = self._model(**inputs)
+                    with torch.no_grad():
+                        outputs = self._model(**inputs)
 
-                post_results = self._processor.post_process_instance_segmentation(
-                    outputs,
-                    threshold=confidence_threshold,
-                    target_sizes=[(sample.height, sample.width)],
+                    post_results = self._processor.post_process_instance_segmentation(
+                        outputs,
+                        threshold=confidence_threshold,
+                        target_sizes=[(sample.height, sample.width)],
+                    )
+                    detections = post_results[0]
+                except Exception as exc:
+                    return self._build_runtime_error_result(exc)
+
+                entries = prepare_segmentation_entries(
+                    boxes=detections["boxes"],
+                    masks=detections["masks"],
+                    scores=detections["scores"],
+                    image_size=(sample.width, sample.height),
+                    include_rle=not bounding_boxes_only,
                 )
-                detections = post_results[0]
-            except Exception as exc:
-                return self._build_runtime_error_result(exc)
-
-            entries = prepare_segmentation_entries(
-                boxes=detections["boxes"],
-                masks=detections["masks"],
-                scores=detections["scores"],
-                image_size=(sample.width, sample.height),
-                include_rle=not bounding_boxes_only,
-            )
-            for entry in entries:
-                raw_detections.append((sample, entry))
+                for entry in entries:
+                    raw_detections.append((sample, prompt_index, entry))
 
         if not raw_detections:
             return OperatorResult(
@@ -241,9 +304,14 @@ class SAM3SegmentationOperator(BaseOperator):
                 message="Segmentation complete. No annotations created.",
             )
 
-        label_id = _get_or_create_label(
-            session=session, dataset_id=collection.dataset_id, label_name=prompt
-        )
+        # Rows sharing a label resolve to the same id, so their detections merge into one
+        # annotation class.
+        label_ids = [
+            _get_or_create_label(
+                session=session, dataset_id=collection.dataset_id, label_name=label
+            )
+            for label in labels
+        ]
 
         # A segmentation annotation carries its bounding box as well, so storing
         # masks already covers both. Boxes-only drops the mask on purpose.
@@ -254,11 +322,11 @@ class SAM3SegmentationOperator(BaseOperator):
         )
 
         annotation_creates: list[AnnotationCreate] = []
-        for sample, entry in raw_detections:
+        for sample, prompt_index, entry in raw_detections:
             x, y, w, h = entry["box"]
             annotation_creates.append(
                 AnnotationCreate(
-                    annotation_label_id=label_id,
+                    annotation_label_id=label_ids[prompt_index],
                     annotation_type=annotation_type,
                     parent_sample_id=sample.sample_id,
                     confidence=entry["score"],

@@ -60,7 +60,7 @@ Each plugin entry below includes the exact copy-paste install command. After ins
   </details>
 
 - [SAM3](plugins/sam3_segmentation/)  
-  Segments all instances matching a text prompt in a single image or across the current view.
+  Segments all instances matching a table of text prompts in a single image or across the current view.
 
   <details>
   <summary>Details</summary>
@@ -69,9 +69,9 @@ Each plugin entry below includes the exact copy-paste install command. After ins
   class-like prompts such as `person`, `car`, or `dog`.
 
   - Scope: single image or images in the current view
-  - Input: text prompt
+  - Input: a table of text prompts and the label to assign to each
   - Output: segmentation masks, or bounding boxes only
-  - Labels: the prompt text is used as the annotation class name
+  - Labels: each prompt's detections get that row's label, defaulting to the prompt text
   - Requirement: Hugging Face access to `facebook/sam3`
   - Maintainer: Lightly
   - Install:

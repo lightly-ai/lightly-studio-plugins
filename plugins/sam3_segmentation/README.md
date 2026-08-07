@@ -37,10 +37,21 @@ If CUDA is not available, the plugin will run on CPU automatically.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `model_id` | string | `"facebook/sam3"` | HuggingFace model ID — `facebook/sam3` or `facebook/sam3.1` |
-| `prompt` | string | `"person"` | Text describing what to segment (e.g. `"car"`, `"dog"`) |
-| `confidence_threshold` | float | `0.5` | Minimum score to keep a prediction |
+| `prompt` | table | `person`, `car` | Prompts to segment with and the labels to assign. See below |
+| `confidence_threshold` | float | `0.5` | Minimum score to keep a prediction. Applies to every prompt |
 | `bounding_boxes_only` | bool | `false` | Store bounding boxes instead of segmentation masks |
 | `collection_name` | string | `"SAM3_auto_label"` | Target annotation collection for generated segmentations. Override this to store the results in a different collection. |
+
+### The `prompt` table
+
+| Column | Required | Description |
+|---|---|---|
+| `prompt` | yes | What to segment, e.g. `"person"` |
+| `label` | no | Label assigned to this prompt's detections. Defaults to the prompt itself |
+
+Add and remove rows in the GUI to segment several concepts in one run. Rows that share a
+label merge into a single annotation class, so you can map `car` and `truck` both to
+`vehicle`.
 
 ## Notes
 
@@ -49,3 +60,5 @@ If CUDA is not available, the plugin will run on CPU automatically.
   - ticked: `object_detection` annotations with a bounding box.
 - A `segmentation_mask` annotation always stores its bounding box. So the default already gives you mask *and* box on a single annotation. Tick `bounding_boxes_only` only when you want plain detections without the mask.
 - Annotations are written to the collection given by `collection_name`.
+- Each prompt runs its own forward pass, so runtime scales with the number of rows. SAM3 pads every text prompt to a fixed length and treats a list of prompts as one entry per batch element, so prompts cannot share a pass without losing the per-prompt split.
+- Prompts are evaluated independently and overlapping detections are all kept. An object matched by two prompts yields two annotations, one per label.

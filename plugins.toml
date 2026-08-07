@@ -9,7 +9,7 @@ tags = ["auto-labeling", "tracking"]
 [[plugins]]
 id = "lightly_plugins_sam3_segmentation"
 name = "SAM3"
-description = "Segments all instances matching a text prompt in a single image or the current image view"
+description = "Segments all instances matching a table of text prompts in a single image or the current image view"
 source = "local:plugins/sam3_segmentation"
 maintainer = "lightly"
 tags = ["auto-labeling", "segmentation"]
