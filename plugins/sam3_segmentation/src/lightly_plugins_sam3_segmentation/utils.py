@@ -5,10 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from numpy.typing import NDArray
-
 from labelformat.model.binary_mask_segmentation import BinaryMaskSegmentation
 from labelformat.model.bounding_box import BoundingBox
+from numpy.typing import NDArray
 
 
 def _clamp_xyxy_to_xywh(

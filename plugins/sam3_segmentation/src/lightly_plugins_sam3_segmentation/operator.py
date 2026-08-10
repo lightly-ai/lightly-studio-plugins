@@ -10,9 +10,6 @@ from uuid import UUID
 
 import PIL.Image
 import torch
-from sqlmodel import Session
-from transformers import Sam3Model, Sam3Processor
-
 from lightly_studio.models.annotation.annotation_base import (
     AnnotationCreate,
     AnnotationType,
@@ -20,8 +17,6 @@ from lightly_studio.models.annotation.annotation_base import (
 from lightly_studio.models.annotation_label import AnnotationLabelCreate
 from lightly_studio.plugins.base_operator import BaseOperator, OperatorResult
 from lightly_studio.plugins.operator_context import ExecutionContext, OperatorScope
-from lightly_studio.resolvers.image_filter import ImageFilter
-from lightly_studio.resolvers.sample_resolver.sample_filter import SampleFilter
 from lightly_studio.plugins.parameter import (
     BaseParameter,
     BoolParameter,
@@ -35,12 +30,17 @@ from lightly_studio.resolvers import (
     collection_resolver,
     image_resolver,
 )
+from lightly_studio.resolvers.image_filter import ImageFilter
+from lightly_studio.resolvers.sample_resolver.sample_filter import SampleFilter
+from sqlmodel import Session
+from transformers import Sam3Model, Sam3Processor
 
 from lightly_plugins_sam3_segmentation.utils import prepare_segmentation_entries
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL_ID = "facebook/sam3"
+_PROMPT_BATCH_SIZE = 16
 
 PARAM_MODEL_ID = "model_id"
 PARAM_PROMPTS = "prompts"
@@ -83,6 +83,25 @@ def _select_device() -> str:
     if torch.backends.mps.is_available():
         return "mps"
     return "cpu"
+
+
+def _expand_vision_embeds(vision_embeds: Any, batch_size: int) -> Any:
+    """Repeat one image's vision features across `batch_size` prompts.
+
+    SAM3 does not broadcast text features on the text-only path, so the vision and text
+    batch dimensions have to match.
+    """
+    return dataclasses.replace(
+        vision_embeds,
+        fpn_hidden_states=tuple(
+            tensor.expand(batch_size, *tensor.shape[1:])
+            for tensor in vision_embeds.fpn_hidden_states
+        ),
+        fpn_position_encoding=tuple(
+            tensor.expand(batch_size, *tensor.shape[1:])
+            for tensor in vision_embeds.fpn_position_encoding
+        ),
+    )
 
 
 def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
@@ -206,24 +225,29 @@ class SAM3SegmentationOperator(BaseOperator):
                 pixel_values=image_inputs["pixel_values"]
             )
 
-            for row in prompt_rows:
-                text_inputs = self._processor(text=row.prompt, return_tensors="pt").to(
-                    device
+            for start in range(0, len(prompt_rows), _PROMPT_BATCH_SIZE):
+                batch = prompt_rows[start : start + _PROMPT_BATCH_SIZE]
+                text_inputs = self._processor(
+                    text=[row.prompt for row in batch], return_tensors="pt"
+                ).to(device)
+                outputs = self._model(
+                    vision_embeds=_expand_vision_embeds(vision_embeds, len(batch)),
+                    **text_inputs,
                 )
-                outputs = self._model(vision_embeds=vision_embeds, **text_inputs)
-                result = self._processor.post_process_instance_segmentation(
+                results = self._processor.post_process_instance_segmentation(
                     outputs,
                     threshold=confidence_threshold,
-                    target_sizes=[(height, width)],
-                )[0]
-                entries = prepare_segmentation_entries(
-                    boxes=result["boxes"],
-                    masks=result["masks"],
-                    scores=result["scores"],
-                    image_size=image_size,
-                    include_rle=include_rle,
+                    target_sizes=[(height, width)] * len(batch),
                 )
-                detections += [(row.label, entry) for entry in entries]
+                for row, result in zip(batch, results):
+                    entries = prepare_segmentation_entries(
+                        boxes=result["boxes"],
+                        masks=result["masks"],
+                        scores=result["scores"],
+                        image_size=image_size,
+                        include_rle=include_rle,
+                    )
+                    detections += [(row.label, entry) for entry in entries]
 
         return detections
 
