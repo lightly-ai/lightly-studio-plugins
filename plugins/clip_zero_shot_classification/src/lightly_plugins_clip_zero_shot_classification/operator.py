@@ -76,18 +76,23 @@ def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) ->
 
 
 def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
-    """Read the prompt table, which reaches the operator unvalidated."""
+    """Read the prompt table, which reaches the operator unvalidated.
+
+    Raises `ValueError` on a row whose prompt is empty, rather than dropping it, so a
+    half-filled row is reported instead of silently classifying against fewer prompts.
+    """
     if not isinstance(rows, list):
         return []
 
     parsed: list[PromptRow] = []
-    for row in rows:
+    for index, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
         prompt = str(row.get(COLUMN_PROMPT, "")).strip()
-        if prompt:
-            label = str(row.get(COLUMN_LABEL, "")).strip() or prompt
-            parsed.append(PromptRow(prompt=prompt, label=label))
+        if not prompt:
+            raise ValueError(f"Row {index + 1} has an empty prompt.")
+        label = str(row.get(COLUMN_LABEL, "")).strip() or prompt
+        parsed.append(PromptRow(prompt=prompt, label=label))
 
     return parsed
 
@@ -280,7 +285,10 @@ class ClipZeroShotClassificationOperator(BaseOperator):
             else _DEFAULT_COLLECTION_NAME
         )
 
-        prompt_rows = _parse_prompt_rows(parameters.get(PARAM_PROMPTS))
+        try:
+            prompt_rows = _parse_prompt_rows(parameters.get(PARAM_PROMPTS))
+        except ValueError as exc:
+            return OperatorResult(success=False, message=str(exc))
         if not prompt_rows:
             return OperatorResult(
                 success=False,

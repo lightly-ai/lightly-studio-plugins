@@ -44,7 +44,7 @@ Any CLIP checkpoint on HuggingFace that loads with `CLIPModel` works. Larger mod
 
 | Column | Required | Description |
 |---|---|---|
-| `prompt` | yes | CLIP text prompt, e.g. `"a photo of a dog"` |
+| `prompt` | yes | CLIP text prompt, e.g. `"a photo of a dog"`. A row with an empty prompt is an error, not a skipped row |
 | `label` | no | Label to assign when this prompt scores highest. Defaults to the prompt itself |
 
 Add and remove rows in the GUI to define your classes. Prompt wording matters for CLIP — `"a photo of a dog"` typically works better than a bare `"dog"`.
