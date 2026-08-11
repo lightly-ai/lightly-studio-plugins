@@ -6,7 +6,7 @@ import dataclasses
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
 import PIL.Image
@@ -62,6 +62,13 @@ COLUMN_PROMPT = "prompt"
 COLUMN_LABEL = "label"
 
 
+class PromptRow(NamedTuple):
+    """One prompt-table row: the text to match and the label its best match gets."""
+
+    prompt: str
+    label: str
+
+
 def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
     """Return the id of the label with the given name, creating it if necessary."""
     label = annotation_label_resolver.get_by_label_name(
@@ -77,7 +84,7 @@ def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) ->
     return label.annotation_label_id
 
 
-def _parse_prompt_rows(rows: Any) -> tuple[list[str], list[str]]:
+def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
     """Extract the prompt and label of every usable row of the prompts table.
 
     The rows are not validated against the declared parameters before they reach the
@@ -89,34 +96,28 @@ def _parse_prompt_rows(rows: Any) -> tuple[list[str], list[str]]:
         rows: The raw value of the prompts table parameter.
 
     Returns:
-        The prompts and their labels as two parallel lists.
+        One row per usable prompt, in the order they were given.
     """
-    prompts: list[str] = []
-    labels: list[str] = []
     if not isinstance(rows, list):
-        return prompts, labels
+        return []
 
+    parsed: list[PromptRow] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
         prompt = str(row.get(COLUMN_PROMPT, "")).strip()
-        if not prompt:
-            continue
-        label = str(row.get(COLUMN_LABEL, "")).strip() or prompt
-        prompts.append(prompt)
-        labels.append(label)
+        if prompt:
+            label = str(row.get(COLUMN_LABEL, "")).strip() or prompt
+            parsed.append(PromptRow(prompt=prompt, label=label))
 
-    return prompts, labels
+    return parsed
 
 
 def _select_device() -> str:
     """Return the best available torch device, preferring CUDA, then Apple Silicon."""
     if torch.cuda.is_available():
         return "cuda"
-    if (
-        getattr(torch.backends, "mps", None) is not None
-        and torch.backends.mps.is_available()
-    ):
+    if torch.backends.mps.is_available():
         return "mps"
     return "cpu"
 
@@ -361,8 +362,8 @@ class ClipZeroShotClassificationOperator(BaseOperator):
             else _DEFAULT_COLLECTION_NAME
         )
 
-        prompts, labels = _parse_prompt_rows(parameters.get(PARAM_PROMPTS))
-        if not prompts:
+        prompt_rows = _parse_prompt_rows(parameters.get(PARAM_PROMPTS))
+        if not prompt_rows:
             return OperatorResult(
                 success=False,
                 message="Please provide at least one prompt.",
@@ -394,23 +395,21 @@ class ClipZeroShotClassificationOperator(BaseOperator):
 
         try:
             self._load_model(model_id, device)
-            text_embeds = self._encode_prompts(prompts, device)
+            text_embeds = self._encode_prompts(
+                [row.prompt for row in prompt_rows], device
+            )
         except Exception as exc:
             return self._build_runtime_error_result(exc)
 
         # `logit_scale` is a trainable parameter, so detach it to keep the scores out of the
         # autograd graph.
         logit_scale = self._model.logit_scale.detach().exp()
-        # One label id per prompt row, so a row index maps straight to its label. Rows that
-        # repeat a label resolve to the same id.
-        label_ids = [
-            _get_or_create_label(
-                session=session,
-                dataset_id=collection.dataset_id,
-                label_name=label_name,
+        label_ids = {
+            row.label: _get_or_create_label(
+                session=session, dataset_id=collection.dataset_id, label_name=row.label
             )
-            for label_name in labels
-        ]
+            for row in prompt_rows
+        }
 
         annotations_to_create: list[AnnotationCreate] = []
         total_annotations_created = 0
@@ -457,7 +456,7 @@ class ClipZeroShotClassificationOperator(BaseOperator):
                     continue
                 annotations_to_create.append(
                     AnnotationCreate(
-                        annotation_label_id=label_ids[best_index],
+                        annotation_label_id=label_ids[prompt_rows[best_index].label],
                         annotation_type=AnnotationType.CLASSIFICATION,
                         parent_sample_id=sample.sample_id,
                         confidence=float(best_score),
@@ -485,7 +484,7 @@ class ClipZeroShotClassificationOperator(BaseOperator):
 
         message = (
             f"Classified {total_annotations_created} of {len(samples)} samples into "
-            f"{len(set(labels))} labels."
+            f"{len(label_ids)} labels."
         )
         if skipped_below_threshold:
             message += f" {skipped_below_threshold} below threshold."
