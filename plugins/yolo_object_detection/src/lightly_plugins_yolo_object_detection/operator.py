@@ -157,12 +157,8 @@ class YoloObjectDetectionOperator(BaseOperator):
                     success=False,
                     message=f"Failed to run inference on '{image_entry.file_path_abs}': {e}",
                 )
-            if not isinstance(result, Results):
-                logger.warning(
-                    "Unexpected result type for '%s'; skipping.",
-                    image_entry.file_path_abs,
-                )
-                continue
+            # A single image always yields one `Results`; `embed=` is never passed.
+            assert isinstance(result, Results)
             boxes = result.boxes
             if boxes is None:
                 logger.warning(
