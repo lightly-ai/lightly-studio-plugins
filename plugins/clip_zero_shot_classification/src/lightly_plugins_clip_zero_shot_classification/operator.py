@@ -41,11 +41,8 @@ _DEFAULT_MODEL_ID = "openai/clip-vit-base-patch16"
 _DEFAULT_CONFIDENCE = 0.0
 _DEFAULT_COLLECTION_NAME = "clip_zero_shot"
 
-# `from_pretrained` spawns a background thread asking the HuggingFace converter bot for a
-# safetensors copy whenever it resolves `.bin` weights, which reaches the Hub even when the
-# model is fully cached and is not suppressed by `local_files_only`. Models whose main
-# revision has no safetensors, such as the default one, would otherwise make those requests
-# on every single load.
+# On `.bin` weights, `from_pretrained` asks the HuggingFace converter bot for a
+# safetensors copy on every load, even when cached. `local_files_only` does not stop it.
 _DISABLE_CONVERSION_ENV = "DISABLE_SAFETENSORS_CONVERSION"
 
 # Number of images encoded in a single CLIP forward pass.
@@ -112,10 +109,8 @@ def _select_device() -> str:
 def _normalized_embeddings(features: Any) -> torch.Tensor:
     """Turn the output of a CLIP feature call into L2-normalized embeddings.
 
-    `get_text_features` and `get_image_features` return a bare tensor on transformers 4.x
-    but a `BaseModelOutputWithPooling` on 5.x, where the embeddings are the pooler output.
-    Note that indexing such an output yields `last_hidden_state`, not the embeddings, so the
-    pooler output is read explicitly.
+    The feature calls return a bare tensor on transformers 4.x but a pooling output on
+    5.x, whose embeddings are the pooler output. Indexing it gives `last_hidden_state`.
     """
     embeds = features if isinstance(features, torch.Tensor) else features.pooler_output
     normalized: torch.Tensor = embeds / embeds.norm(dim=-1, keepdim=True)
@@ -199,11 +194,8 @@ class ClipZeroShotClassificationOperator(BaseOperator):
         """Load the CLIP model and processor, reusing an already loaded model.
 
         A bare repo id makes `from_pretrained` revalidate the cache against the Hub on every
-        call, which costs a round trip per weight-file candidate even when nothing has to be
-        downloaded. The cache is therefore tried offline first, falling back to a networked
-        load when the model is missing locally or only partially cached. The safetensors
-        conversion request described on `_DISABLE_CONVERSION_ENV` is suppressed around both
-        attempts, since it reaches the Hub on the download path too.
+        call, so the cache is tried offline first and only then over the network. The
+        `_DISABLE_CONVERSION_ENV` request is suppressed around both attempts.
         """
         if (
             self._model is not None
@@ -344,8 +336,7 @@ class ClipZeroShotClassificationOperator(BaseOperator):
         except Exception as exc:
             return self._build_runtime_error_result(exc)
 
-        # `logit_scale` is a trainable parameter, so detach it to keep the scores out of the
-        # autograd graph.
+        # `logit_scale` is trainable, so detach it to keep scores out of the autograd.
         logit_scale = self._model.logit_scale.detach().exp()
         label_ids = {
             row.label: _get_or_create_label(
@@ -381,11 +372,9 @@ class ClipZeroShotClassificationOperator(BaseOperator):
 
             try:
                 image_embeds = self._encode_images(images, device)
-                # Both embedding sets are L2-normalized, so the dot product is the cosine
-                # similarity.
+                # Both sets are L2-normalized, so the dot product is cosine similarity.
                 similarities = image_embeds @ text_embeds.T
-                # The softmax is over prompts, so the scores sum to one across the
-                # vocabulary and are directly comparable to the confidence threshold.
+                # Softmax over prompts, so the scores are comparable to the threshold.
                 scores = (logit_scale * similarities).softmax(dim=-1)
                 best_scores, best_indices = scores.max(dim=-1)
             except Exception as exc:
