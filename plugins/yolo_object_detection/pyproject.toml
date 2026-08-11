@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "YOLO inference operator for object detection auto-labeling"
 requires-python = ">=3.9"
 dependencies = [
-    "lightly_studio>=1.0.0",
+    "lightly_studio>=1.0.4",
     "sqlmodel",
     "ultralytics",
 ]

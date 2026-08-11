@@ -41,7 +41,6 @@ class KittiObjectDetectionInput(LightlyStudioObjectDetectionInput):
         session: Session,
         dataset_id: UUID,
         samples: Iterable[ImageSample],
-        annotation_collection_id: UUID | None = None,
         images_root: Path | None = None,
     ) -> None:
         """Initialize the input.
@@ -50,8 +49,6 @@ class KittiObjectDetectionInput(LightlyStudioObjectDetectionInput):
             session: The database session.
             dataset_id: The dataset ID for label retrieval.
             samples: The samples to export.
-            annotation_collection_id: If provided, only annotations belonging to this
-                annotation collection are exported. If None, all annotations are exported.
             images_root: Common root path used to preserve nested image folders.
         """
         self._images_root = images_root
@@ -59,7 +56,7 @@ class KittiObjectDetectionInput(LightlyStudioObjectDetectionInput):
             session=session,
             dataset_id=dataset_id,
             samples=samples,
-            annotation_collection_id=annotation_collection_id,
+            annotation_collection_id=None,
             sample_to_image=image_sample_to_image,
         )
 

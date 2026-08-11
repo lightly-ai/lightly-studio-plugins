@@ -9,7 +9,7 @@ from uuid import UUID
 
 from sqlmodel import Session
 from ultralytics import YOLO  # type: ignore[attr-defined]
-from ultralytics.engine.results import Boxes, Results
+from ultralytics.engine.results import Results
 
 from lightly_studio.models.annotation.annotation_base import (
     AnnotationCreate,
@@ -146,6 +146,7 @@ class YoloObjectDetectionOperator(BaseOperator):
                         image_entry.file_path_abs, conf=confidence, verbose=False
                     )
                 )
+                result = results[0]
             except Exception as e:
                 logger.error(
                     "Failed to run inference on '%s': %s",
@@ -156,12 +157,19 @@ class YoloObjectDetectionOperator(BaseOperator):
                     success=False,
                     message=f"Failed to run inference on '{image_entry.file_path_abs}': {e}",
                 )
-            # Detection on a single image returns exactly one `Results`.
-            result = results[0]
             if not isinstance(result, Results):
+                logger.warning(
+                    "Unexpected result type for '%s'; skipping.",
+                    image_entry.file_path_abs,
+                )
                 continue
-            boxes: Boxes | None = result.boxes
+            boxes = result.boxes
             if boxes is None:
+                logger.warning(
+                    "No boxes returned for '%s'; is '%s' a detection model?",
+                    image_entry.file_path_abs,
+                    model_path,
+                )
                 continue
             for box_index in range(len(boxes)):
                 category_id = int(boxes.cls[box_index])
