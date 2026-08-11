@@ -15,6 +15,7 @@ from labelformat.model.object_detection import ImageObjectDetection
 from sqlmodel import Session
 
 from lightly_studio.core.image.image_sample import ImageSample
+from lightly_studio.export.image_dataset_export import image_sample_to_image
 from lightly_studio.export.lightly_studio_label_input import (
     LightlyStudioObjectDetectionInput,
 )
@@ -40,6 +41,7 @@ class KittiObjectDetectionInput(LightlyStudioObjectDetectionInput):
         session: Session,
         dataset_id: UUID,
         samples: Iterable[ImageSample],
+        annotation_collection_id: UUID | None = None,
         images_root: Path | None = None,
     ) -> None:
         """Initialize the input.
@@ -48,10 +50,18 @@ class KittiObjectDetectionInput(LightlyStudioObjectDetectionInput):
             session: The database session.
             dataset_id: The dataset ID for label retrieval.
             samples: The samples to export.
+            annotation_collection_id: If provided, only annotations belonging to this
+                annotation collection are exported. If None, all annotations are exported.
             images_root: Common root path used to preserve nested image folders.
         """
         self._images_root = images_root
-        super().__init__(session=session, dataset_id=dataset_id, samples=samples)
+        super().__init__(
+            session=session,
+            dataset_id=dataset_id,
+            samples=samples,
+            annotation_collection_id=annotation_collection_id,
+            sample_to_image=image_sample_to_image,
+        )
 
     def get_images(self) -> list[Image]:
         """Return images with filenames relative to the KITTI output folder."""
