@@ -149,12 +149,13 @@ class ClipZeroShotClassificationOperator(BaseOperator):
                     StringParameter(
                         name=COLUMN_PROMPT,
                         description="CLIP text prompt, e.g. 'a photo of a dog'.",
+                        required=True,
                     ),
                     StringParameter(
                         name=COLUMN_LABEL,
                         description=(
-                            "Label to assign when this prompt scores highest. Defaults to "
-                            "the prompt itself."
+                            "Label to assign when this prompt scores highest. Leave "
+                            "empty to use the prompt itself."
                         ),
                         required=False,
                     ),
