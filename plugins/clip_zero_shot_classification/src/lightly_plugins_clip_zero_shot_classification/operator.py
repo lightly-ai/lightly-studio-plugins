@@ -70,7 +70,6 @@ class PromptRow(NamedTuple):
 
 
 def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
-    """Return the id of the label with the given name, creating it if necessary."""
     label = annotation_label_resolver.get_by_label_name(
         session=session, dataset_id=dataset_id, label_name=label_name
     )
@@ -85,19 +84,7 @@ def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) ->
 
 
 def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
-    """Extract the prompt and label of every usable row of the prompts table.
-
-    The rows are not validated against the declared parameters before they reach the
-    operator, so they are read defensively here. Rows that are malformed or carry an empty
-    prompt are skipped. An empty label falls back to the prompt itself, since the label
-    column is optional.
-
-    Args:
-        rows: The raw value of the prompts table parameter.
-
-    Returns:
-        One row per usable prompt, in the order they were given.
-    """
+    """Read the prompt table, which reaches the operator unvalidated."""
     if not isinstance(rows, list):
         return []
 
@@ -114,7 +101,7 @@ def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
 
 
 def _select_device() -> str:
-    """Return the best available torch device, preferring CUDA, then Apple Silicon."""
+    """Pick the fastest device CLIP can run on."""
     if torch.cuda.is_available():
         return "cuda"
     if torch.backends.mps.is_available():
@@ -129,13 +116,6 @@ def _normalized_embeddings(features: Any) -> torch.Tensor:
     but a `BaseModelOutputWithPooling` on 5.x, where the embeddings are the pooler output.
     Note that indexing such an output yields `last_hidden_state`, not the embeddings, so the
     pooler output is read explicitly.
-
-    Args:
-        features: The value returned by a CLIP feature call.
-
-    Returns:
-        The embeddings of shape (batch_size, embedding_dim), L2-normalized along the last
-        dimension.
     """
     embeds = features if isinstance(features, torch.Tensor) else features.pooler_output
     normalized: torch.Tensor = embeds / embeds.norm(dim=-1, keepdim=True)
@@ -158,7 +138,6 @@ class ClipZeroShotClassificationOperator(BaseOperator):
 
     @property
     def parameters(self) -> list[BaseParameter]:
-        """Return the list of parameters this operator expects."""
         return [
             StringParameter(
                 name=PARAM_MODEL_ID,
@@ -214,7 +193,6 @@ class ClipZeroShotClassificationOperator(BaseOperator):
 
     @property
     def supported_scopes(self) -> list[OperatorScope]:
-        """Return the list of scopes this operator can be triggered from."""
         return [OperatorScope.IMAGE]
 
     def _load_model(self, model_id: str, device: str) -> None:
@@ -260,17 +238,9 @@ class ClipZeroShotClassificationOperator(BaseOperator):
 
     @staticmethod
     def _from_pretrained(model_id: str, *, local_files_only: bool) -> tuple[Any, Any]:
-        """Load the CLIP model and processor, either from the cache only or from the Hub.
+        """Load the CLIP model and processor, from the cache only or from the Hub.
 
-        Args:
-            model_id: HuggingFace CLIP model ID.
-            local_files_only: Whether to restrict the load to already cached files.
-
-        Returns:
-            The model and its processor. The model is not moved to a device yet.
-
-        Raises:
-            OSError: If `local_files_only` is set and the model is not fully cached.
+        Raises `OSError` if `local_files_only` is set and the model is not fully cached.
         """
         model = CLIPModel.from_pretrained(model_id, local_files_only=local_files_only)
         processor = CLIPProcessor.from_pretrained(
@@ -279,15 +249,7 @@ class ClipZeroShotClassificationOperator(BaseOperator):
         return model, processor
 
     def _encode_prompts(self, prompts: list[str], device: str) -> torch.Tensor:
-        """Encode the prompts into normalized CLIP text embeddings.
-
-        Args:
-            prompts: The prompts to encode.
-            device: Device the model runs on.
-
-        Returns:
-            The normalized text embeddings of shape (num_prompts, embedding_dim).
-        """
+        """Encode the prompts into normalized CLIP text embeddings."""
         inputs = self._processor(
             text=prompts, return_tensors="pt", padding=True, truncation=True
         )
@@ -299,15 +261,7 @@ class ClipZeroShotClassificationOperator(BaseOperator):
     def _encode_images(
         self, images: list[PIL.Image.Image], device: str
     ) -> torch.Tensor:
-        """Encode the images into normalized CLIP image embeddings.
-
-        Args:
-            images: The images to encode.
-            device: Device the model runs on.
-
-        Returns:
-            The normalized image embeddings of shape (num_images, embedding_dim).
-        """
+        """Encode the images into normalized CLIP image embeddings."""
         inputs = self._processor(images=images, return_tensors="pt")
         inputs = {key: value.to(device) for key, value in inputs.items()}
         with torch.no_grad():
@@ -315,7 +269,6 @@ class ClipZeroShotClassificationOperator(BaseOperator):
         return _normalized_embeddings(image_features)
 
     def _build_runtime_error_result(self, exc: Exception) -> OperatorResult:
-        """Log the exception and turn it into a failed operator result."""
         logger.exception("CLIP zero-shot classification failed: %s", exc)
         return OperatorResult(
             success=False,
@@ -332,16 +285,6 @@ class ClipZeroShotClassificationOperator(BaseOperator):
         context: ExecutionContext,
         parameters: dict[str, Any],
     ) -> OperatorResult:
-        """Classify every image in the current view against the configured prompts.
-
-        Args:
-            session: Database session.
-            context: Execution context containing collection_id and optional filter.
-            parameters: Parameters passed to the operator.
-
-        Returns:
-            An OperatorResult summarizing how many images were classified.
-        """
         model_id = str(parameters.get(PARAM_MODEL_ID, _DEFAULT_MODEL_ID)).strip()
         if not model_id:
             return OperatorResult(success=False, message="Please provide a model ID.")
