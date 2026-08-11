@@ -141,12 +141,9 @@ class YoloObjectDetectionOperator(BaseOperator):
         total_annotations_created = 0
         for i, image_entry in enumerate(samples, start=1):
             try:
-                results = list(
-                    model.predict(
-                        image_entry.file_path_abs, conf=confidence, verbose=False
-                    )
-                )
-                result = results[0]
+                result = list(
+                    model(image_entry.file_path_abs, conf=confidence, verbose=False)
+                )[0]
             except Exception as e:
                 logger.error(
                     "Failed to run inference on '%s': %s",
