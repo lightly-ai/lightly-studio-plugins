@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from lightly_studio.models.annotation.annotation_base import (
@@ -41,11 +41,12 @@ DEFAULT_CONFIDENCE = 0.25
 
 PARAM_MODEL = "model_path"
 PARAM_CONFIDENCE = "confidence"
-PARAM_CLASSES = "classes"
+PARAM_PROMPTS = "prompts"
 PARAM_INSTANCE_SEGMENTATION = "instance_segmentation"
 PARAM_ANNOTATION_SOURCE = "annotation_source"
 
-COLUMN_CLASS_NAME = "class_name"
+COLUMN_PROMPT = "prompt"
+COLUMN_LABEL = "label"
 
 _WRITE_BATCH_SIZE = 100
 
@@ -56,8 +57,8 @@ class YoloEObjectDetectionOperator(BaseOperator):
 
     name: str = "YOLOE Open Vocabulary Object Detection"
     description: str = (
-        "Runs YOLOE inference and adds bounding box or instance segmentation "
-        "annotations to unlabeled images."
+        "Runs YOLOE inference from a table of text prompts and adds bounding box or "
+        "instance segmentation annotations to unlabeled images."
     )
 
     @property
@@ -80,16 +81,27 @@ class YoloEObjectDetectionOperator(BaseOperator):
                 description="Minimum confidence threshold for keeping a prediction.",
             ),
             TableParameter(
-                name=PARAM_CLASSES,
+                name=PARAM_PROMPTS,
                 required=True,
-                description="Open vocabulary classes to detect. One class per row.",
+                description=(
+                    "One prompt per row. Detections are annotated with the row's "
+                    "label, or with the prompt if the label is empty."
+                ),
                 columns=[
                     StringParameter(
-                        name=COLUMN_CLASS_NAME,
-                        description="Class name to detect.",
+                        name=COLUMN_PROMPT,
+                        description="What to detect, e.g. 'person'.",
+                    ),
+                    StringParameter(
+                        name=COLUMN_LABEL,
+                        description=(
+                            "Annotation label for this prompt's detections. "
+                            "Leave empty to use the prompt."
+                        ),
+                        required=False,
                     ),
                 ],
-                default=[{COLUMN_CLASS_NAME: "person"}],
+                default=[{COLUMN_PROMPT: "person", COLUMN_LABEL: "person"}],
             ),
             BoolParameter(
                 name=PARAM_INSTANCE_SEGMENTATION,
@@ -138,11 +150,11 @@ class YoloEObjectDetectionOperator(BaseOperator):
                 message="confidence must be between 0 and 1",
             )
 
-        class_names, class_names_error = _parse_class_names(
-            rows=parameters.get(PARAM_CLASSES)
+        prompt_rows, prompt_rows_error = _parse_prompt_rows(
+            rows=parameters.get(PARAM_PROMPTS)
         )
-        if class_names_error is not None:
-            return OperatorResult(success=False, message=class_names_error)
+        if prompt_rows_error is not None:
+            return OperatorResult(success=False, message=prompt_rows_error)
 
         try:
             model = YOLO(model_path)
@@ -154,13 +166,13 @@ class YoloEObjectDetectionOperator(BaseOperator):
             )
 
         try:
-            model.set_classes(class_names)
+            model.set_classes([row.prompt for row in prompt_rows])
         except Exception as e:
-            logger.error("Failed to set classes on model '%s': %s", model_path, e)
+            logger.error("Failed to set prompts on model '%s': %s", model_path, e)
             return OperatorResult(
                 success=False,
                 message=(
-                    f"Failed to set classes on model '{model_path}': {e}. "
+                    f"Failed to set prompts on model '{model_path}': {e}. "
                     "Make sure it is an open vocabulary YOLOE checkpoint."
                 ),
             )
@@ -168,6 +180,7 @@ class YoloEObjectDetectionOperator(BaseOperator):
         label_map = _get_or_create_label_map(
             session=session,
             root_collection_id=context.collection_id,
+            prompt_rows=prompt_rows,
             class_map=model.names,
         )
 
@@ -287,45 +300,93 @@ class YoloEObjectDetectionOperator(BaseOperator):
         )
 
 
-def _parse_class_names(rows: Any) -> tuple[list[str], str | None]:
-    """Read the class names from the rows of the classes table parameter.
+class PromptRow(NamedTuple):
+    """One prompt-table row: what to detect and the label its detections get."""
 
-    The rows are not validated against the declared parameters before they reach the operator,
-    so they are read defensively.
+    prompt: str
+    label: str
+
+
+def _parse_prompt_rows(rows: Any) -> tuple[list[PromptRow], str | None]:
+    """Read the prompt table, which reaches the operator unvalidated.
+
+    `TableParameter` only checks cell types and column names, so blank and duplicate rows
+    are rejected here rather than silently dropped.
 
     Args:
-        rows: The value of the classes table parameter.
+        rows: The value of the prompts table parameter.
 
     Returns:
-        A tuple of the class names and an error message, the latter being None on success.
+        A tuple of the parsed rows and an error message, the latter being None on success.
     """
-    if not isinstance(rows, list):
-        return [], "classes parameter is required and cannot be empty."
+    if not isinstance(rows, list) or not rows:
+        return [], "Please provide at least one prompt."
 
-    class_names: list[str] = []
+    parsed: list[PromptRow] = []
+    seen: set[str] = set()
     for row in rows:
         if not isinstance(row, dict):
-            continue
-        class_name = str(row.get(COLUMN_CLASS_NAME, "")).strip()
-        # `YOLOE.set_classes` asserts that " " is not among the class names, as it uses
-        # that as its background sentinel. Stripping and skipping empty names covers it.
-        if not class_name:
-            continue
-        if class_name not in class_names:
-            class_names.append(class_name)
+            return [], "Please provide at least one prompt."
+        prompt = str(row.get(COLUMN_PROMPT, "")).strip()
+        # `YOLOE.set_classes` asserts that " " is not among the prompts, as it uses that
+        # as its background sentinel, so a blank prompt can never be passed through.
+        if not prompt:
+            return [], "Every row needs a prompt. Remove empty rows and try again."
+        if prompt in seen:
+            return [], (
+                "Each prompt can only appear once. "
+                "Remove the duplicate rows and try again."
+            )
+        seen.add(prompt)
+        label = str(row.get(COLUMN_LABEL, "")).strip() or prompt
+        parsed.append(PromptRow(prompt=prompt, label=label))
 
-    if not class_names:
-        return [], "classes parameter must contain at least one valid class name."
-    return class_names, None
+    return parsed, None
+
+
+def _get_or_create_label(
+    *, session: Session, dataset_id: UUID, label_name: str
+) -> UUID:
+    """Return the id of the label with this name, creating it if needed."""
+    label = annotation_label_resolver.get_by_label_name(
+        session=session,
+        dataset_id=dataset_id,
+        label_name=label_name,
+    )
+    if label is None:
+        label = annotation_label_resolver.create(
+            session=session,
+            label=AnnotationLabelCreate(
+                dataset_id=dataset_id,
+                annotation_label_name=label_name,
+            ),
+        )
+    return label.annotation_label_id
 
 
 def _get_or_create_label_map(
     *,
     session: Session,
     root_collection_id: UUID,
+    prompt_rows: list[PromptRow],
     class_map: dict[int, str],
 ) -> dict[int, UUID]:
-    """Ensure labels exist for all class names and return {category_id: label_id}."""
+    """Ensure labels exist for all rows and return {category_id: label_id}.
+
+    `class_map` is `model.names` read back after `set_classes`, mapping each category id to
+    its prompt. Going through it rather than the row order is deliberate: `set_classes`
+    keeps the checkpoint's own ordering when the prompts are a permutation of its existing
+    names. Rows sharing a label resolve to the same label id.
+
+    Args:
+        session: The database session.
+        root_collection_id: The collection the annotations belong to.
+        prompt_rows: The parsed rows of the prompts table parameter.
+        class_map: The model's {category_id: prompt} mapping.
+
+    Returns:
+        The {category_id: label_id} mapping for the model's classes.
+    """
     collection = collection_resolver.get_by_id(
         session=session,
         collection_id=root_collection_id,
@@ -334,21 +395,17 @@ def _get_or_create_label_map(
         raise ValueError(f"Collection {root_collection_id} doesn't exist")
     dataset_id = collection.dataset_id
 
-    label_map: dict[int, UUID] = {}
-    for category_id, label_name in class_map.items():
-        label = annotation_label_resolver.get_by_label_name(
+    label_ids = {
+        row.label: _get_or_create_label(
             session=session,
             dataset_id=dataset_id,
-            label_name=label_name,
+            label_name=row.label,
         )
-        if label is None:
-            label = annotation_label_resolver.create(
-                session=session,
-                label=AnnotationLabelCreate(
-                    dataset_id=dataset_id,
-                    annotation_label_name=label_name,
-                ),
-            )
-        label_map[category_id] = label.annotation_label_id
-
-    return label_map
+        for row in prompt_rows
+    }
+    labels_by_prompt = {row.prompt: row.label for row in prompt_rows}
+    return {
+        category_id: label_ids[labels_by_prompt[prompt]]
+        for category_id, prompt in class_map.items()
+        if prompt in labels_by_prompt
+    }

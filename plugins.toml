@@ -33,7 +33,7 @@ tags = ["auto-labeling", "object-detection", "inference"]
 [[plugins]]
 id = "lightly_plugins_yoloe_object_detection"
 name = "YOLOE Open Vocabulary Object Detection"
-description = "Runs YOLOE inference and adds bounding box or instance segmentation annotations to a single image or the current filtered image view"
+description = "Runs YOLOE inference from a table of text prompts and adds bounding box or instance segmentation annotations to a single image or the current filtered image view"
 source = "local:plugins/yoloe_object_detection"
 maintainer = "lightly"
 tags = ["auto-labeling", "object-detection", "segmentation", "inference"]
