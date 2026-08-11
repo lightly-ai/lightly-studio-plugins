@@ -33,11 +33,6 @@ prompts are rejected — remove them rather than leaving them blank.
 
 ## Notes
 
-- Unlike the [YOLO plugin](../yolo_object_detection/), classes are not fixed by the checkpoint: YOLOE takes them as a text prompt, so you can detect anything you name in the `prompts` table. Labels are created in the dataset if they do not exist yet.
-- Multi-word prompts are supported (e.g. `stuffed toy`, `fire hydrant`) — the prompt goes through a CLIP text encoder, so a descriptive phrase is fine.
-- Prompt-capable YOLOE checkpoints are all `-seg` variants and produce masks and boxes together. The `instance_segmentation` tick selects which of the two is stored, not what the model computes:
-  - unticked → `object_detection` annotations with a bounding box.
-  - ticked → `segmentation_mask` annotations carrying the mask *and* its bounding box, so no detail is lost.
-- With `instance_segmentation` enabled the model is run with `retina_masks=True`, which returns masks at the source image resolution.
-- Annotations are stored in a collection named `yoloe_auto_label__{model_path}` by default, configurable via `annotation_source`.
-- Ultralytics model weights are downloaded automatically on first use.
+- Unlike the [YOLO plugin](../yolo_object_detection/), classes are not fixed by the checkpoint — detect anything you name in the `prompts` table, including multi-word phrases like `stuffed toy`. Missing labels are created in the dataset.
+- Prompt-capable checkpoints are all `-seg` variants and compute masks and boxes together, so `instance_segmentation` only selects which is stored: `segmentation_mask` annotations (mask *and* box) when ticked, `object_detection` (box only) when not.
+- Model weights are downloaded on first use.
