@@ -30,9 +30,9 @@ A collection of installable plugins that extend the base functionality of [Light
 
 Each plugin in this repository is packaged independently, installs in a single command, and is auto-discovered by Lightly Studio via Python entry points.
 
-![SAM3 Segmentation Plugin](plugins/sam3_segmentation/sam3_plugin.gif)
+![SAM3 Plugin](plugins/sam3_segmentation/sam3_plugin.gif)
 
-<p align="center"><em>SAM3 Segmentation Plugin</em></p>
+<p align="center"><em>SAM3 Plugin</em></p>
 
 Each plugin entry below includes the exact copy-paste install command. After installation, the plugin is available in Lightly Studio automatically.
 
@@ -59,7 +59,7 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
   </details>
 
-- [SAM3 Segmentation](plugins/sam3_segmentation/)  
+- [SAM3](plugins/sam3_segmentation/)  
   Segments all instances matching a text prompt in a single image or across the current view.
 
   <details>
@@ -70,7 +70,7 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
   - Scope: single image or images in the current view
   - Input: text prompt
-  - Output: segmentation masks
+  - Output: segmentation masks, or bounding boxes only
   - Labels: the prompt text is used as the annotation class name
   - Requirement: Hugging Face access to `facebook/sam3`
   - Maintainer: Lightly
@@ -166,6 +166,29 @@ Each plugin entry below includes the exact copy-paste install command. After ins
   - Maintainer: Lightly
   - Install:
     `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/kitti_export_object_detection/`
+
+  </details>
+
+- [OpenRouter image captioning](plugins/openrouter_image_captioning/)  
+  Captions a single image or the current view with a vision model served through OpenRouter.
+
+  <details>
+  <summary>Details</summary>
+
+  Uses [OpenRouter](https://openrouter.ai/)'s OpenAI-compatible API, so any
+  vision-capable model on the gateway can be used by changing one parameter.
+
+  - Scope: single image or images in the current view
+  - Input: model slug and prompt
+  - Output: Lightly Studio captions
+  - Requirement: an `OPENROUTER_API_KEY` environment variable
+  - Default model: `qwen/qwen3-vl-8b-instruct`. Any vision-capable model from
+    [openrouter.ai/models](https://openrouter.ai/models) works
+  - Tradeoff: each run calls a paid API and blocks until it finishes, so filter the
+    view down before captioning
+  - Maintainer: Lightly
+  - Install:
+    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/openrouter_image_captioning/`
 
   </details>
 
