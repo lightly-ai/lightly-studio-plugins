@@ -5,14 +5,13 @@ description = "CLIP zero-shot image classification operator for Lightly Studio"
 requires-python = ">=3.10"
 dependencies = [
     "lightly_studio>=1.0.4",
-    "sqlmodel",
     "torch",
-    # The range spans the 4.x/5.x major boundary, where `get_*_features` changed its return
-    # type (see `_normalized_embeddings`), so the resolved major is pinned to keep loads
-    # reproducible. For why to avoid transformers 5.10, see
+    # `get_*_features` returns a bare tensor on 4.x and a BaseModelOutputWithPooling on 5.x;
+    # `_normalized_embeddings` handles both. For why to avoid transformers 5.10, see
     # https://github.com/huggingface/transformers/issues/46402
-    "transformers>=5.9,<5.10",
+    "transformers>=4.57.2,<5.10",
     "Pillow",
+    "sqlmodel",
 ]
 
 [project.entry-points."lightly_studio.plugins"]
