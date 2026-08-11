@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 from uuid import UUID
@@ -40,10 +39,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MODEL_ID = "openai/clip-vit-base-patch16"
 _DEFAULT_CONFIDENCE = 0.0
 _DEFAULT_COLLECTION_NAME = "clip_zero_shot"
-
-# On `.bin` weights, `from_pretrained` asks the HuggingFace converter bot for a
-# safetensors copy on every load, even when cached. `local_files_only` does not stop it.
-_DISABLE_CONVERSION_ENV = "DISABLE_SAFETENSORS_CONVERSION"
 
 # Number of images encoded in a single CLIP forward pass.
 _INFERENCE_BATCH_SIZE = 8
@@ -193,9 +188,8 @@ class ClipZeroShotClassificationOperator(BaseOperator):
     def _load_model(self, model_id: str, device: str) -> None:
         """Load the CLIP model and processor, reusing an already loaded model.
 
-        A bare repo id makes `from_pretrained` revalidate the cache against the Hub on every
-        call, so the cache is tried offline first and only then over the network. The
-        `_DISABLE_CONVERSION_ENV` request is suppressed around both attempts.
+        A bare repo id makes `from_pretrained` revalidate the cache against the Hub on
+        every call, so the cache is tried offline first and only then over the network.
         """
         if (
             self._model is not None
@@ -205,23 +199,11 @@ class ClipZeroShotClassificationOperator(BaseOperator):
             return
 
         logger.info("Loading CLIP model (%s) on device: %s", model_id, device)
-        previous_conversion_env = os.environ.get(_DISABLE_CONVERSION_ENV)
-        os.environ[_DISABLE_CONVERSION_ENV] = "1"
         try:
-            try:
-                model, processor = self._from_pretrained(
-                    model_id, local_files_only=True
-                )
-            except OSError:
-                logger.info("Model (%s) not cached locally, downloading.", model_id)
-                model, processor = self._from_pretrained(
-                    model_id, local_files_only=False
-                )
-        finally:
-            if previous_conversion_env is None:
-                os.environ.pop(_DISABLE_CONVERSION_ENV, None)
-            else:
-                os.environ[_DISABLE_CONVERSION_ENV] = previous_conversion_env
+            model, processor = self._from_pretrained(model_id, local_files_only=True)
+        except OSError:
+            logger.info("Model (%s) not cached locally, downloading.", model_id)
+            model, processor = self._from_pretrained(model_id, local_files_only=False)
 
         self._model = model.to(device).eval()
         self._processor = processor
