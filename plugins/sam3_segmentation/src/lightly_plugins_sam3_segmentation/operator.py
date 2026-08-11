@@ -40,7 +40,6 @@ from lightly_plugins_sam3_segmentation.utils import prepare_segmentation_entries
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL_ID = "facebook/sam3"
-_PROMPT_BATCH_SIZE = 16
 
 PARAM_MODEL_ID = "model_id"
 PARAM_PROMPTS = "prompts"
@@ -225,29 +224,28 @@ class SAM3SegmentationOperator(BaseOperator):
                 pixel_values=image_inputs["pixel_values"]
             )
 
-            for start in range(0, len(prompt_rows), _PROMPT_BATCH_SIZE):
-                batch = prompt_rows[start : start + _PROMPT_BATCH_SIZE]
-                text_inputs = self._processor(
-                    text=[row.prompt for row in batch], return_tensors="pt"
-                ).to(device)
-                outputs = self._model(
-                    vision_embeds=_expand_vision_embeds(vision_embeds, len(batch)),
-                    **text_inputs,
-                )
-                results = self._processor.post_process_instance_segmentation(
-                    outputs,
-                    threshold=confidence_threshold,
-                    target_sizes=[(height, width)] * len(batch),
-                )
-                for row, result in zip(batch, results):
-                    entries = prepare_segmentation_entries(
-                        boxes=result["boxes"],
-                        masks=result["masks"],
-                        scores=result["scores"],
-                        image_size=image_size,
-                        include_rle=include_rle,
-                    )
-                    detections += [(row.label, entry) for entry in entries]
+            text_inputs = self._processor(
+                text=[row.prompt for row in prompt_rows], return_tensors="pt"
+            ).to(device)
+            outputs = self._model(
+                vision_embeds=_expand_vision_embeds(vision_embeds, len(prompt_rows)),
+                **text_inputs,
+            )
+            results = self._processor.post_process_instance_segmentation(
+                outputs,
+                threshold=confidence_threshold,
+                target_sizes=[(height, width)] * len(prompt_rows),
+            )
+
+        for row, result in zip(prompt_rows, results):
+            entries = prepare_segmentation_entries(
+                boxes=result["boxes"],
+                masks=result["masks"],
+                scores=result["scores"],
+                image_size=image_size,
+                include_rle=include_rle,
+            )
+            detections += [(row.label, entry) for entry in entries]
 
         return detections
 
