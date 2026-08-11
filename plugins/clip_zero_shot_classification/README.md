@@ -14,7 +14,7 @@ uv pip install "git+https://github.com/lightly-ai/lightly-studio-plugins.git#sub
 
 ### 2. GPU (optional)
 
-By default the plugin runs on CUDA if available, then Apple Silicon (MPS), then CPU. To use a CUDA GPU, reinstall PyTorch with the appropriate CUDA build:
+The plugin picks a device automatically: CUDA, else MPS, else CPU. To use a CUDA GPU, reinstall PyTorch with the appropriate CUDA build:
 
 ```bash
 uv pip install torch --index-url https://download.pytorch.org/whl/cu121
@@ -49,14 +49,11 @@ Any CLIP checkpoint on HuggingFace that loads with `CLIPModel` works. Larger mod
 
 Add and remove rows in the GUI to define your classes. Prompt wording matters for CLIP — `"a photo of a dog"` typically works better than a bare `"dog"`.
 
+Rows sharing a label merge into a single annotation class, so `a photo of a wolf` and `a photo of a dog` can both map to `canine`.
+
 ## Notes
 
-- **Cover your data with the vocabulary.** By far the most common cause of bad results is a
-  missing class rather than a weak model: because the scores are a softmax over the prompts
-  you supply, an image whose true class is absent is still forced onto the closest prompt.
-  If you only define `dog` and `cat`, a photo of a train confidently becomes one of them.
-  Add a row for every class you expect to see.
+- **Cover your data with the vocabulary.** The most common cause of bad results is a missing class rather than a weak model: the scores are a softmax over the prompts you supply, so an image whose true class is absent is still forced onto the closest prompt and can score high on it. If you only define `dog` and `cat`, a photo of a train confidently becomes one of them. Add a row for every class you expect to see, plus explicit "background" or "other" rows if you want a catch-all rather than relying on the threshold.
 - Each image receives at most one `classification` annotation — the single best-matching label.
-- Scores are a softmax across all prompts, so they are relative to the vocabulary you define. Adding or removing prompts changes the scores of the others, and a `confidence_threshold` tuned for one vocabulary will not transfer to another.
-- Because the softmax is over the prompts you supply, an image that matches none of them still gets a high score for the closest one. Add explicit "background" or "other" rows if you want a catch-all class rather than relying on the threshold.
+- Because the scores are relative to the vocabulary you define, adding or removing prompts changes the scores of the others, and a `confidence_threshold` tuned for one vocabulary will not transfer to another.
 - Images that cannot be read are skipped and reported in the result message.
