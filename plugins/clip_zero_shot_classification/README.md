@@ -53,7 +53,10 @@ Rows sharing a label merge into a single annotation class, so `a photo of a wolf
 
 ## Notes
 
-- **Cover your data with the vocabulary.** The most common cause of bad results is a missing class rather than a weak model: the scores are a softmax over the prompts you supply, so an image whose true class is absent is still forced onto the closest prompt and can score high on it. If you only define `dog` and `cat`, a photo of a train confidently becomes one of them. Add a row for every class you expect to see, plus explicit "background" or "other" rows if you want a catch-all rather than relying on the threshold.
-- Each image receives at most one `classification` annotation — the single best-matching label.
-- Because the scores are relative to the vocabulary you define, adding or removing prompts changes the scores of the others, and a `confidence_threshold` tuned for one vocabulary will not transfer to another.
-- Images that cannot be read are skipped and reported in the result message.
+Scores are a softmax over the prompts you supply, so they say which prompt fits best, not whether any of them fits at all.
+
+- An image whose true class is not in the table is still labelled with the closest prompt.
+- The `confidence_threshold` only catches such images while every prompt is equally wrong. Given `dog` and `cat`, a photo of a train splits about 0.58/0.42 and a threshold of 0.7 discards it; with a prompt it fits better, like `red vehicle`, the score saturates above 0.99 and no threshold filters it.
+- Scores are relative to the whole list, so adding or removing one prompt shifts all the others.
+
+Each image gets at most one `classification` annotation. Unreadable images are skipped and counted in the result message.
