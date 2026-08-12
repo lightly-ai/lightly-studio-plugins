@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlmodel import Session
 from ultralytics import YOLO  # type: ignore[attr-defined]
+from ultralytics.engine.results import Results
 
 from lightly_studio.models.annotation.annotation_base import (
     AnnotationCreate,
@@ -140,8 +141,8 @@ class YoloObjectDetectionOperator(BaseOperator):
         total_annotations_created = 0
         for i, image_entry in enumerate(samples, start=1):
             try:
-                results = model(
-                    image_entry.file_path_abs, conf=confidence, verbose=False
+                result = list(
+                    model(image_entry.file_path_abs, conf=confidence, verbose=False)
                 )[0]
             except Exception as e:
                 logger.error(
@@ -153,12 +154,22 @@ class YoloObjectDetectionOperator(BaseOperator):
                     success=False,
                     message=f"Failed to run inference on '{image_entry.file_path_abs}': {e}",
                 )
-            for box in results.boxes:
-                category_id = int(box.cls)
+            # A single image always yields one `Results`; `embed=` is never passed.
+            assert isinstance(result, Results)
+            boxes = result.boxes
+            if boxes is None:
+                logger.warning(
+                    "No boxes returned for '%s'; is '%s' a detection model?",
+                    image_entry.file_path_abs,
+                    model_path,
+                )
+                continue
+            for box_index in range(len(boxes)):
+                category_id = int(boxes.cls[box_index])
                 label_id = label_map.get(category_id)
                 if label_id is None:
                     continue
-                x_center, y_center, w, h = box.xywh[0].tolist()
+                x_center, y_center, w, h = boxes.xywh[box_index].tolist()
                 annotations_to_create.append(
                     AnnotationCreate(
                         annotation_label_id=label_id,
@@ -168,7 +179,7 @@ class YoloObjectDetectionOperator(BaseOperator):
                         y=round(y_center - h / 2),
                         width=max(1, round(w)),
                         height=max(1, round(h)),
-                        confidence=float(box.conf),
+                        confidence=float(boxes.conf[box_index]),
                     )
                 )
 
