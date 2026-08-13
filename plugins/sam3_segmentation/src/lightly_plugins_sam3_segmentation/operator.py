@@ -161,7 +161,12 @@ class SAM3SegmentationOperator(BaseOperator):
 
         bounding_boxes_only = bool(parameters.get(PARAM_BOUNDING_BOXES_ONLY, False))
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
         collection_name_value = parameters.get(PARAM_COLLECTION_NAME)
         if collection_name_value is None:
             return OperatorResult(
