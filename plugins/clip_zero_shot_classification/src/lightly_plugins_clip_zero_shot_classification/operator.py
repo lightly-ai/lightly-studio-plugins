@@ -37,7 +37,7 @@ from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_COLLECTION_NAME = "clip_zero_shot"
+_DEFAULT_COLLECTION_NAME = "zero_shot"
 
 # Number of samples scored in a single matrix multiplication.
 _SCORING_BATCH_SIZE = 1024

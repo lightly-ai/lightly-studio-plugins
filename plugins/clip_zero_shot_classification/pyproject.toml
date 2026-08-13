@@ -2,7 +2,7 @@
 name = "lightly_plugins_clip_zero_shot_classification"
 version = "0.1.0"
 description = "Zero-shot image classification operator for Lightly Studio"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
     "lightly_studio>=1.0.4",
     "numpy",
