@@ -1,16 +1,11 @@
 [project]
 name = "lightly_plugins_clip_zero_shot_classification"
 version = "0.1.0"
-description = "CLIP zero-shot image classification operator for Lightly Studio"
+description = "Zero-shot image classification operator for Lightly Studio"
 requires-python = ">=3.10"
 dependencies = [
     "lightly_studio>=1.0.4",
-    "torch",
-    # `get_*_features` returns a bare tensor on 4.x and a BaseModelOutputWithPooling on 5.x;
-    # `_normalized_embeddings` handles both. For why to avoid transformers 5.10, see
-    # https://github.com/huggingface/transformers/issues/46402
-    "transformers>=4.57.2,<5.10",
-    "Pillow",
+    "numpy",
     "sqlmodel",
 ]
 

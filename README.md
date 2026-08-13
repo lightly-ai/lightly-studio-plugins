@@ -79,7 +79,7 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
   </details>
 
-- [CLIP Zero-Shot Classification](plugins/clip_zero_shot_classification/)  
+- [Zero-Shot Classification](plugins/clip_zero_shot_classification/)  
   Classifies images against a table of text prompts and the labels to assign, with no training.
 
   <details>
@@ -89,15 +89,15 @@ Each plugin entry below includes the exact copy-paste install command. After ins
   the label set is not fixed by a trained model. Each image is scored against
   every prompt and receives the label of the best match.
 
+  Scoring reuses the embeddings Lightly Studio already computed for the
+  collection, so no vision model is loaded and no image is read from disk.
+
   - Scope: single image or images in the current view
   - Input: table of text prompts and the label each prompt assigns
   - Output: classification annotations, at most one per image
   - Labels: taken from the `label` column, defaulting to the prompt text, and
     created in the dataset if they do not exist yet
-  - Recommended models:
-    `openai/clip-vit-base-patch16` (default) for a speed/quality balance,
-    `openai/clip-vit-base-patch32` for speed,
-    `openai/clip-vit-large-patch14` for better accuracy
+  - Requires: the collection to be embedded, which Lightly Studio does on ingest
   - Maintainer: Lightly
   - Install:
     `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/clip_zero_shot_classification/`

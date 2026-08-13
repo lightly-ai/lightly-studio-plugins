@@ -16,8 +16,8 @@ tags = ["auto-labeling", "segmentation"]
 
 [[plugins]]
 id = "lightly_plugins_clip_zero_shot_classification"
-name = "CLIP Zero-Shot Classification"
-description = "Classifies images with CLIP against a table of text prompts and the labels to assign"
+name = "Zero-Shot Classification"
+description = "Classifies images against a table of text prompts using the collection's existing embeddings"
 source = "local:plugins/clip_zero_shot_classification"
 maintainer = "lightly"
 tags = ["auto-labeling", "classification", "zero-shot"]
