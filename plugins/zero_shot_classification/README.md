@@ -11,12 +11,12 @@ The plugin does not run its own vision model. It reads the stored image embeddin
 ### 1. Install the plugin
 
 ```bash
-uv pip install "git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/clip_zero_shot_classification/"
+uv pip install "git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/zero_shot_classification/"
 ```
 
 ### 2. Embed the collection
 
-The collection must be embedded before the plugin can classify it, which Lightly Studio does when the dataset is ingested. The embedding model is whichever one the collection was embedded with — MobileCLIP (`mobileclip_s0`) by default, configurable through `LIGHTLY_STUDIO_EMBEDDINGS_MODEL_TYPE`. Running on a collection without embeddings reports an error rather than embedding it for you.
+The collection must be embedded before the plugin can classify it, which Lightly Studio does when the dataset is ingested. The embedding model is whichever one the collection was embedded with, set by `LIGHTLY_STUDIO_EMBEDDINGS_MODEL_TYPE`. Running on a collection without embeddings reports an error rather than embedding it for you.
 
 ## Parameters
 

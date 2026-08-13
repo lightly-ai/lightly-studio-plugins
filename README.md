@@ -79,7 +79,7 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
   </details>
 
-- [Zero-Shot Classification](plugins/clip_zero_shot_classification/)  
+- [Zero-Shot Classification](plugins/zero_shot_classification/)  
   Classifies images against a table of text prompts and the labels to assign, with no training.
 
   <details>
@@ -100,7 +100,7 @@ Each plugin entry below includes the exact copy-paste install command. After ins
   - Requires: the collection to be embedded, which Lightly Studio does on ingest
   - Maintainer: Lightly
   - Install:
-    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/clip_zero_shot_classification/`
+    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/zero_shot_classification/`
 
   </details>
 

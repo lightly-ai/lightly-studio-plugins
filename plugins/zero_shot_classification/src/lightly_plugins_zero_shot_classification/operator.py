@@ -108,8 +108,8 @@ def _as_sample_filter(context_filter: Any) -> SampleFilter | None:
 def _l2_normalize(matrix: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
     """L2-normalize row-wise, so a dot product is cosine similarity.
 
-    Stored embeddings are not normalized by every model: MobileCLIP writes raw
-    encoder output while the Perception Encoder normalizes.
+    Stored embeddings are not normalized by every model: some write raw encoder
+    output while others normalize.
     """
     norms = np.linalg.norm(matrix, axis=-1, keepdims=True)
     normalized: NDArray[np.floating[Any]] = matrix / np.maximum(norms, _EPSILON)
@@ -123,7 +123,7 @@ def _softmax(scores: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
 
 
 @dataclass
-class ClipZeroShotClassificationOperator(BaseOperator):
+class ZeroShotClassificationOperator(BaseOperator):
     """Zero-shot image classification driven by a table of prompts and labels."""
 
     name: str = "Zero-Shot Classification"
@@ -287,7 +287,7 @@ class ClipZeroShotClassificationOperator(BaseOperator):
                 )
                 # Both sets are L2-normalized, so the dot product is cosine similarity.
                 similarities = image_embeds @ prompt_embeds.T
-                # Unscaled softmax: CLIP's trained logit scale saturates it at ~1.
+                # Unscaled softmax: the model's trained logit scale saturates it at ~1.
                 scores = _softmax(similarities)
                 best_indices = scores.argmax(axis=-1)
                 best_scores = scores[np.arange(len(batch)), best_indices]
