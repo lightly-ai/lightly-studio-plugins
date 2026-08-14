@@ -5,14 +5,11 @@ from __future__ import annotations
 import dataclasses
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
 import PIL.Image
 import torch
-from sqlmodel import Session
-from transformers import Sam3Model, Sam3Processor
-
 from lightly_studio.models.annotation.annotation_base import (
     AnnotationCreate,
     AnnotationType,
@@ -20,13 +17,12 @@ from lightly_studio.models.annotation.annotation_base import (
 from lightly_studio.models.annotation_label import AnnotationLabelCreate
 from lightly_studio.plugins.base_operator import BaseOperator, OperatorResult
 from lightly_studio.plugins.operator_context import ExecutionContext, OperatorScope
-from lightly_studio.resolvers.image_filter import ImageFilter
-from lightly_studio.resolvers.sample_resolver.sample_filter import SampleFilter
 from lightly_studio.plugins.parameter import (
     BaseParameter,
     BoolParameter,
     FloatParameter,
     StringParameter,
+    TableParameter,
 )
 from lightly_studio.resolvers import (
     annotation_label_resolver,
@@ -34,6 +30,10 @@ from lightly_studio.resolvers import (
     collection_resolver,
     image_resolver,
 )
+from lightly_studio.resolvers.image_filter import ImageFilter
+from lightly_studio.resolvers.sample_resolver.sample_filter import SampleFilter
+from sqlmodel import Session
+from transformers import Sam3Model, Sam3Processor
 
 from lightly_plugins_sam3_segmentation.utils import prepare_segmentation_entries
 
@@ -42,34 +42,30 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MODEL_ID = "facebook/sam3"
 
 PARAM_MODEL_ID = "model_id"
-PARAM_PROMPT = "prompt"
+PARAM_PROMPTS = "prompts"
 PARAM_CONFIDENCE_THRESHOLD = "confidence_threshold"
 PARAM_BOUNDING_BOXES_ONLY = "bounding_boxes_only"
 PARAM_COLLECTION_NAME = "collection_name"
 
+COLUMN_PROMPT = "prompt"
+COLUMN_LABEL = "label"
 
-def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
-    label = annotation_label_resolver.get_by_label_name(
-        session=session, dataset_id=dataset_id, label_name=label_name
-    )
-    if label is None:
-        label = annotation_label_resolver.create(
-            session=session,
-            label=AnnotationLabelCreate(
-                dataset_id=dataset_id, annotation_label_name=label_name
-            ),
-        )
-    return label.annotation_label_id
+
+class PromptRow(NamedTuple):
+    """One prompt-table row: what to segment and the label its detections get."""
+
+    prompt: str
+    label: str
 
 
 @dataclass
 class SAM3SegmentationOperator(BaseOperator):
-    """Instance segmentation using SAM3 driven by a text prompt."""
+    """Instance segmentation using SAM3 driven by a table of prompts and labels."""
 
     name: str = "SAM3"
     description: str = (
-        "Automatic instance segmentation using SAM3 (facebook/sam3). "
-        "Requires HuggingFace access — authenticate with `hf auth login` first."
+        "Automatic instance segmentation using SAM3 (facebook/sam3) from a table of text "
+        "prompts. Requires HuggingFace access — authenticate with `hf auth login` first."
     )
     _model: Any = dataclasses.field(default=None, init=False, repr=False)
     _processor: Any = dataclasses.field(default=None, init=False, repr=False)
@@ -85,11 +81,28 @@ class SAM3SegmentationOperator(BaseOperator):
                 default=_DEFAULT_MODEL_ID,
                 description="HuggingFace model ID (e.g. 'facebook/sam3' or 'facebook/sam3.1')",
             ),
-            StringParameter(
-                name=PARAM_PROMPT,
+            TableParameter(
+                name=PARAM_PROMPTS,
                 required=True,
-                default="person",
-                description="Text prompt describing what to segment (e.g. 'person', 'car')",
+                description=(
+                    "One prompt per row. Detections are annotated with the row's "
+                    "label, or with the prompt if the label is empty."
+                ),
+                columns=[
+                    StringParameter(
+                        name=COLUMN_PROMPT,
+                        description="What to segment, e.g. 'person'.",
+                    ),
+                    StringParameter(
+                        name=COLUMN_LABEL,
+                        description=(
+                            "Annotation label for this prompt's detections. "
+                            "Leave empty to use the prompt."
+                        ),
+                        required=False,
+                    ),
+                ],
+                default=[{COLUMN_PROMPT: "person", COLUMN_LABEL: "person"}],
             ),
             FloatParameter(
                 name=PARAM_CONFIDENCE_THRESHOLD,
@@ -132,6 +145,51 @@ class SAM3SegmentationOperator(BaseOperator):
         self._model_device = device
         self._loaded_model_id = model_id
 
+    def _segment_image(
+        self,
+        *,
+        image: PIL.Image.Image,
+        prompt_rows: list[PromptRow],
+        image_size: tuple[int, int],
+        confidence_threshold: float,
+        include_rle: bool,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Segment one image with every prompt, returning (label, detection) pairs."""
+        width, height = image_size
+        device = self._model_device
+        detections: list[tuple[str, dict[str, Any]]] = []
+
+        with torch.no_grad():
+            image_inputs = self._processor(images=image, return_tensors="pt").to(device)
+            vision_embeds = self._model.get_vision_features(
+                pixel_values=image_inputs["pixel_values"]
+            )
+
+            text_inputs = self._processor(
+                text=[row.prompt for row in prompt_rows], return_tensors="pt"
+            ).to(device)
+            outputs = self._model(
+                vision_embeds=_expand_vision_embeds(vision_embeds, len(prompt_rows)),
+                **text_inputs,
+            )
+            results = self._processor.post_process_instance_segmentation(
+                outputs,
+                threshold=confidence_threshold,
+                target_sizes=[(height, width)] * len(prompt_rows),
+            )
+
+        for row, result in zip(prompt_rows, results):
+            entries = prepare_segmentation_entries(
+                boxes=result["boxes"],
+                masks=result["masks"],
+                scores=result["scores"],
+                image_size=image_size,
+                include_rle=include_rle,
+            )
+            detections += [(row.label, entry) for entry in entries]
+
+        return detections
+
     def _build_runtime_error_result(self, exc: Exception) -> OperatorResult:
         logger.exception("SAM3 segmentation failed: %s", exc)
         return OperatorResult(
@@ -150,18 +208,20 @@ class SAM3SegmentationOperator(BaseOperator):
         parameters: dict[str, Any],
     ) -> OperatorResult:
         model_id: str = parameters.get(PARAM_MODEL_ID, _DEFAULT_MODEL_ID)
-        prompt_value = parameters.get(PARAM_PROMPT)
-        if prompt_value is None:
+        try:
+            prompt_rows = _parse_prompt_rows(parameters.get(PARAM_PROMPTS))
+        except ValueError as exc:
+            return OperatorResult(success=False, message=str(exc))
+        if not prompt_rows:
             return OperatorResult(
                 success=False,
-                message="Please provide a prompt.",
+                message="Please provide at least one prompt.",
             )
-        prompt: str = prompt_value
         confidence_threshold: float = parameters.get(PARAM_CONFIDENCE_THRESHOLD, 0.5)
 
         bounding_boxes_only = bool(parameters.get(PARAM_BOUNDING_BOXES_ONLY, False))
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = _select_device()
         collection_name_value = parameters.get(PARAM_COLLECTION_NAME)
         if collection_name_value is None:
             return OperatorResult(
@@ -198,7 +258,7 @@ class SAM3SegmentationOperator(BaseOperator):
         except Exception as exc:
             return self._build_runtime_error_result(exc)
 
-        raw_detections: list[tuple[Any, Any]] = []  # (sample, entry)
+        detections: list[tuple[Any, str, dict[str, Any]]] = []
         for sample in samples:
             try:
                 with PIL.Image.open(sample.file_path_abs) as opened_image:
@@ -210,40 +270,30 @@ class SAM3SegmentationOperator(BaseOperator):
                 continue
 
             try:
-                inputs = self._processor(images=image, text=prompt, return_tensors="pt")
-                inputs = {k: v.to(device) for k, v in inputs.items()}
-
-                with torch.no_grad():
-                    outputs = self._model(**inputs)
-
-                post_results = self._processor.post_process_instance_segmentation(
-                    outputs,
-                    threshold=confidence_threshold,
-                    target_sizes=[(sample.height, sample.width)],
+                image_detections = self._segment_image(
+                    image=image,
+                    prompt_rows=prompt_rows,
+                    image_size=(sample.width, sample.height),
+                    confidence_threshold=confidence_threshold,
+                    include_rle=not bounding_boxes_only,
                 )
-                detections = post_results[0]
             except Exception as exc:
                 return self._build_runtime_error_result(exc)
 
-            entries = prepare_segmentation_entries(
-                boxes=detections["boxes"],
-                masks=detections["masks"],
-                scores=detections["scores"],
-                image_size=(sample.width, sample.height),
-                include_rle=not bounding_boxes_only,
-            )
-            for entry in entries:
-                raw_detections.append((sample, entry))
+            detections += [(sample, label, entry) for label, entry in image_detections]
 
-        if not raw_detections:
+        if not detections:
             return OperatorResult(
                 success=True,
                 message="Segmentation complete. No annotations created.",
             )
 
-        label_id = _get_or_create_label(
-            session=session, dataset_id=collection.dataset_id, label_name=prompt
-        )
+        label_ids = {
+            row.label: _get_or_create_label(
+                session=session, dataset_id=collection.dataset_id, label_name=row.label
+            )
+            for row in prompt_rows
+        }
 
         # A segmentation annotation carries its bounding box as well, so storing
         # masks already covers both. Boxes-only drops the mask on purpose.
@@ -254,11 +304,11 @@ class SAM3SegmentationOperator(BaseOperator):
         )
 
         annotation_creates: list[AnnotationCreate] = []
-        for sample, entry in raw_detections:
+        for sample, label, entry in detections:
             x, y, w, h = entry["box"]
             annotation_creates.append(
                 AnnotationCreate(
-                    annotation_label_id=label_id,
+                    annotation_label_id=label_ids[label],
                     annotation_type=annotation_type,
                     parent_sample_id=sample.sample_id,
                     confidence=entry["score"],
@@ -280,3 +330,68 @@ class SAM3SegmentationOperator(BaseOperator):
             success=True,
             message=f"Segmentation complete. Created {len(annotation_creates)} annotations.",
         )
+
+
+def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
+    """Read the prompt table, which reaches the operator unvalidated.
+
+    Raises `ValueError` on a row whose prompt is empty, rather than dropping it, so a
+    half-filled row is reported instead of silently segmenting against fewer prompts.
+    """
+    if not isinstance(rows, list):
+        return []
+
+    parsed: list[PromptRow] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            continue
+        # A cell holding null reaches us as None, which `str()` would turn into "None".
+        prompt = str(row.get(COLUMN_PROMPT) or "").strip()
+        if not prompt:
+            raise ValueError(f"Row {index + 1} has an empty prompt.")
+        label = str(row.get(COLUMN_LABEL) or "").strip() or prompt
+        parsed.append(PromptRow(prompt=prompt, label=label))
+
+    return parsed
+
+
+def _select_device() -> str:
+    """Pick the fastest device SAM3 can run on."""
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _expand_vision_embeds(vision_embeds: Any, batch_size: int) -> Any:
+    """Repeat one image's vision features across `batch_size` prompts.
+
+    SAM3 does not broadcast text features on the text-only path, so the vision and text
+    batch dimensions have to match.
+    """
+    return dataclasses.replace(
+        vision_embeds,
+        fpn_hidden_states=tuple(
+            tensor.expand(batch_size, *tensor.shape[1:])
+            for tensor in vision_embeds.fpn_hidden_states
+        ),
+        fpn_position_encoding=tuple(
+            tensor.expand(batch_size, *tensor.shape[1:])
+            for tensor in vision_embeds.fpn_position_encoding
+        ),
+    )
+
+
+def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
+    label = annotation_label_resolver.get_by_label_name(
+        session=session, dataset_id=dataset_id, label_name=label_name
+    )
+    if label is None:
+        label = annotation_label_resolver.create(
+            session=session,
+            label=AnnotationLabelCreate(
+                dataset_id=dataset_id, annotation_label_name=label_name
+            ),
+        )
+    return label.annotation_label_id
