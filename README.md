@@ -79,6 +79,31 @@ Each plugin entry below includes the exact copy-paste install command. After ins
 
   </details>
 
+- [Zero-Shot Classification](plugins/zero_shot_classification/)  
+  Classifies samples against a table of text prompts and the labels to assign, with no training.
+
+  <details>
+  <summary>Details</summary>
+
+  You define the class vocabulary in the GUI as rows of `prompt` and `label`, so
+  the label set is not fixed by a trained model. Each sample is scored against
+  every prompt and receives the label of the best match.
+
+  Scoring reuses the embeddings Lightly Studio already computed for the
+  collection, so no vision model is loaded and no media is read from disk.
+
+  - Scope: images, videos, or video frames in the current view
+  - Input: table of text prompts and the label each prompt assigns
+  - Output: classification annotations, at most one per sample
+  - Labels: taken from the `label` column, defaulting to the prompt text, and
+    created in the dataset if they do not exist yet
+  - Requires: the collection to be embedded, which Lightly Studio does on ingest
+  - Maintainer: Lightly
+  - Install:
+    `pip install git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/zero_shot_classification/`
+
+  </details>
+
 - [LightlyTrain object detection inference](plugins/lightly_train_object_detection_inference/)  
   Runs LightlyTrain object detection inference on one image or the current view for auto-labeling.
 
