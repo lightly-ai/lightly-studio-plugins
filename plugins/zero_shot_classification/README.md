@@ -23,7 +23,7 @@ The collection must be embedded before the plugin can classify it, which Lightly
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `prompts` | table | dog / cat example rows | Table of `prompt` and `label` pairs. |
-| `annotation_source` | string | `"zero_shot"` | Target annotation source where predictions are stored. Override this to store results separately from an earlier run |
+| `annotation_source` | string | `"zero_shot"` | Target annotation source where predictions are stored. Override this to store results separately from an earlier run. |
 
 ### The `prompts` table
 
