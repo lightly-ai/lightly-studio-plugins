@@ -1,10 +1,10 @@
 # Zero-Shot Classification Plugin
 
-Zero-shot image classification built on the embeddings Lightly Studio has already computed for your collection. You define the class vocabulary as a table of text prompts and the label each prompt should assign — no training and no fixed label set.
+Zero-shot classification that uses the embeddings Lightly Studio already computed for your collection. You define the classes as a table of text prompts and the label that each prompt assigns. The plugin scores each sample against every prompt. The label of the best match becomes a classification annotation.
 
-Each image is scored against every prompt, and the label of the best-matching prompt is written as a classification annotation.
+The plugin runs no vision model of its own. It reads the stored embeddings and encodes your prompts with the same model that produced them. One run costs one text encoding per prompt.
 
-The plugin does not run its own vision model. It reads the stored image embeddings and encodes your prompts with the same model that produced them, so a run costs one text encoding per prompt and no image processing at all.
+The plugin runs on image, video, and video frame collections.
 
 ## Setup
 
@@ -16,7 +16,7 @@ uv pip install "git+https://github.com/lightly-ai/lightly-studio-plugins.git#sub
 
 ### 2. Embed the collection
 
-The collection must be embedded before the plugin can classify it, which Lightly Studio does when the dataset is ingested. The embedding model is whichever one the collection was embedded with, set by `LIGHTLY_STUDIO_EMBEDDINGS_MODEL_TYPE`. Running on a collection without embeddings reports an error rather than embedding it for you.
+The collection must have embeddings before the plugin can classify it. Lightly Studio computes them when it ingests the dataset. The plugin uses the model that the collection was embedded with, set by `LIGHTLY_STUDIO_EMBEDDINGS_MODEL_TYPE`. On a collection without embeddings, the plugin reports an error. It does not embed the collection for you.
 
 ## Parameters
 
@@ -29,19 +29,18 @@ The collection must be embedded before the plugin can classify it, which Lightly
 
 | Column | Required | Description |
 |---|---|---|
-| `prompt` | yes | Text prompt, e.g. `"a photo of a dog"`. A row with an empty prompt is an error, not a skipped row. |
+| `prompt` | yes | Text prompt, for example `"a photo of a dog"`. An empty prompt is an error. The plugin does not skip the row. |
 | `label` | no | Label to assign when this prompt scores highest. Defaults to the prompt itself. |
 
-Add and remove rows in the GUI to define your classes. Prompt wording matters — `"a photo of a dog"` typically works better than a bare `"dog"`.
+Add and remove rows in the GUI to define your classes. You must give at least two prompts. Wording changes the result: `"a photo of a dog"` usually scores better than `"dog"`.
 
-Rows sharing a label merge into a single annotation class, so `a photo of a wolf` and `a photo of a dog` can both map to `canine`.
+Rows that share a label merge into one annotation class. Both `a photo of a wolf` and `a photo of a dog` can map to `canine`.
 
 ## Notes
 
-Every image with a stored embedding is labelled with its best-matching prompt. Scores say which prompt fits best, not whether any of them fits at all.
+Every sample with a stored embedding gets the label of its best-matching prompt. The scores show which prompt fits best. They do not show whether any prompt fits at all.
 
-- An image whose true class is not in the table is still labelled with the closest prompt, so the vocabulary has to cover your data. Add a catch-all row such as `a photo of something else` if it does not.
-- Scores are a softmax over the prompts you supply, so they are relative to the whole list and adding or removing one prompt shifts all the others.
-- Prompts run through the collection's own embedding model, so results match what the same text finds in Lightly Studio's similarity search.
+- A sample whose true class is not in the table still gets the closest prompt. Your prompts must cover your data. If they do not, add a catch-all row such as `a photo of something else`.
+- The scores are a softmax over the prompts that you supply. They are relative to the whole list, so each prompt that you add or remove shifts all the others.
 
-Each image gets at most one `classification` annotation. Images without a stored embedding are skipped.
+Each sample gets one `classification` annotation at most. The plugin skips samples that have no stored embedding.

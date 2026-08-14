@@ -1,4 +1,4 @@
-"""Zero-shot image classification operator for Lightly Studio."""
+"""Zero-shot classification operator for Lightly Studio."""
 
 from __future__ import annotations
 
@@ -32,6 +32,10 @@ from lightly_studio.resolvers import (
 )
 from lightly_studio.resolvers.image_filter import ImageFilter
 from lightly_studio.resolvers.sample_resolver.sample_filter import SampleFilter
+from lightly_studio.resolvers.video_frame_resolver.video_frame_filter import (
+    VideoFrameFilter,
+)
+from lightly_studio.resolvers.video_resolver.video_filter import VideoFilter
 from numpy.typing import NDArray
 from sqlmodel import Session
 
@@ -39,10 +43,8 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_COLLECTION_NAME = "zero_shot"
 
-# Number of samples scored in a single matrix multiplication.
-_SCORING_BATCH_SIZE = 1024
-# Number of annotations buffered before they are written to the database.
-_WRITE_BATCH_SIZE = 100
+# Number of samples scored in a single matrix multiplication and written per insert.
+_BATCH_SIZE = 1024
 # Guards against dividing by zero when normalizing a degenerate embedding.
 _EPSILON = 1e-12
 
@@ -60,75 +62,13 @@ class PromptRow(NamedTuple):
     label: str
 
 
-def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
-    label = annotation_label_resolver.get_by_label_name(
-        session=session, dataset_id=dataset_id, label_name=label_name
-    )
-    if label is None:
-        label = annotation_label_resolver.create(
-            session=session,
-            label=AnnotationLabelCreate(
-                dataset_id=dataset_id, annotation_label_name=label_name
-            ),
-        )
-    return label.annotation_label_id
-
-
-def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
-    """Read the prompt table, which reaches the operator unvalidated.
-
-    Raises `ValueError` on a row whose prompt is empty, rather than dropping it, so a
-    half-filled row is reported instead of silently classifying against fewer prompts.
-    """
-    if not isinstance(rows, list):
-        return []
-
-    parsed: list[PromptRow] = []
-    for index, row in enumerate(rows):
-        if not isinstance(row, dict):
-            continue
-        prompt = str(row.get(COLUMN_PROMPT, "")).strip()
-        if not prompt:
-            raise ValueError(f"Row {index + 1} has an empty prompt.")
-        label = str(row.get(COLUMN_LABEL, "")).strip() or prompt
-        parsed.append(PromptRow(prompt=prompt, label=label))
-
-    return parsed
-
-
-def _as_sample_filter(context_filter: Any) -> SampleFilter | None:
-    """Reduce the operator's context filter to the sample filter embeddings accept."""
-    if isinstance(context_filter, SampleFilter):
-        return context_filter
-    if isinstance(context_filter, ImageFilter):
-        return context_filter.sample_filter
-    return None
-
-
-def _l2_normalize(matrix: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
-    """L2-normalize row-wise, so a dot product is cosine similarity.
-
-    Stored embeddings are not normalized by every model: some write raw encoder
-    output while others normalize.
-    """
-    norms = np.linalg.norm(matrix, axis=-1, keepdims=True)
-    normalized: NDArray[np.floating[Any]] = matrix / np.maximum(norms, _EPSILON)
-    return normalized
-
-
-def _softmax(scores: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
-    """Softmax over the prompts, shifted by the row max for numerical stability."""
-    exponentials = np.exp(scores - scores.max(axis=-1, keepdims=True))
-    return exponentials / exponentials.sum(axis=-1, keepdims=True)
-
-
 @dataclass
 class ZeroShotClassificationOperator(BaseOperator):
-    """Zero-shot image classification driven by a table of prompts and labels."""
+    """Zero-shot classification driven by a table of prompts and labels."""
 
     name: str = "Zero-Shot Classification"
     description: str = (
-        "Classifies images against a table of text prompts using the embeddings already "
+        "Classifies samples against a table of text prompts using the embeddings already "
         "computed for the collection."
     )
 
@@ -139,8 +79,8 @@ class ZeroShotClassificationOperator(BaseOperator):
                 name=PARAM_PROMPTS,
                 required=True,
                 description=(
-                    "Text prompt to match against each image and the label to assign when "
-                    "it wins."
+                    "Text prompt to match against each sample and the label to assign "
+                    "when it wins."
                 ),
                 columns=[
                     StringParameter(
@@ -172,7 +112,7 @@ class ZeroShotClassificationOperator(BaseOperator):
 
     @property
     def supported_scopes(self) -> list[OperatorScope]:
-        return [OperatorScope.IMAGE]
+        return [OperatorScope.IMAGE, OperatorScope.VIDEO_FRAME, OperatorScope.VIDEO]
 
     def _build_runtime_error_result(self, exc: Exception) -> OperatorResult:
         logger.exception("Zero-shot classification failed: %s", exc)
@@ -199,10 +139,10 @@ class ZeroShotClassificationOperator(BaseOperator):
             prompt_rows = _parse_prompt_rows(parameters.get(PARAM_PROMPTS))
         except ValueError as exc:
             return OperatorResult(success=False, message=str(exc))
-        if not prompt_rows:
+        if len(prompt_rows) < 2:
             return OperatorResult(
                 success=False,
-                message="Please provide at least one prompt.",
+                message="Please provide at least two prompts.",
             )
 
         collection = collection_resolver.get_by_id(
@@ -263,7 +203,7 @@ class ZeroShotClassificationOperator(BaseOperator):
             return OperatorResult(
                 success=False,
                 message=(
-                    f"Image embeddings have {embedding_dimension} dimensions but the "
+                    f"Sample embeddings have {embedding_dimension} dimensions but the "
                     f"prompt embeddings have {prompt_embeds.shape[-1]}."
                 ),
             )
@@ -275,18 +215,17 @@ class ZeroShotClassificationOperator(BaseOperator):
             for row in prompt_rows
         }
 
-        annotations_to_create: list[AnnotationCreate] = []
         total_annotations_created = 0
 
-        for batch_start in range(0, len(embedding_rows), _SCORING_BATCH_SIZE):
-            batch = embedding_rows[batch_start : batch_start + _SCORING_BATCH_SIZE]
+        for batch_start in range(0, len(embedding_rows), _BATCH_SIZE):
+            batch = embedding_rows[batch_start : batch_start + _BATCH_SIZE]
 
             try:
-                image_embeds = _l2_normalize(
+                sample_embeds = _l2_normalize(
                     np.stack([row.embedding for row in batch]).astype(np.float32)
                 )
                 # Both sets are L2-normalized, so the dot product is cosine similarity.
-                similarities = image_embeds @ prompt_embeds.T
+                similarities = sample_embeds @ prompt_embeds.T
                 # Unscaled softmax: the model's trained logit scale saturates it at ~1.
                 scores = _softmax(similarities)
                 best_indices = scores.argmax(axis=-1)
@@ -294,29 +233,17 @@ class ZeroShotClassificationOperator(BaseOperator):
             except Exception as exc:
                 return self._build_runtime_error_result(exc)
 
-            for row, best_score, best_index in zip(
-                batch, best_scores.tolist(), best_indices.tolist()
-            ):
-                annotations_to_create.append(
-                    AnnotationCreate(
-                        annotation_label_id=label_ids[prompt_rows[best_index].label],
-                        annotation_type=AnnotationType.CLASSIFICATION,
-                        parent_sample_id=row.sample_id,
-                        confidence=float(best_score),
-                    )
+            annotations_to_create = [
+                AnnotationCreate(
+                    annotation_label_id=label_ids[prompt_rows[best_index].label],
+                    annotation_type=AnnotationType.CLASSIFICATION,
+                    parent_sample_id=row.sample_id,
+                    confidence=float(best_score),
                 )
-
-            if len(annotations_to_create) >= _WRITE_BATCH_SIZE:
-                created = annotation_resolver.create_many(
-                    session=session,
-                    parent_collection_id=context.collection_id,
-                    annotations=annotations_to_create,
-                    collection_name=collection_name,
+                for row, best_score, best_index in zip(
+                    batch, best_scores.tolist(), best_indices.tolist()
                 )
-                total_annotations_created += len(created)
-                annotations_to_create = []
-
-        if annotations_to_create:
+            ]
             created = annotation_resolver.create_many(
                 session=session,
                 parent_collection_id=context.collection_id,
@@ -330,3 +257,70 @@ class ZeroShotClassificationOperator(BaseOperator):
             f"{len(label_ids)} labels."
         )
         return OperatorResult(success=True, message=message)
+
+
+def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
+    """Read the prompt table, which reaches the operator unvalidated.
+
+    Raises `ValueError` on a row whose prompt is empty, rather than dropping it, so a
+    half-filled row is reported instead of silently classifying against fewer prompts.
+    """
+    if not isinstance(rows, list):
+        return []
+
+    parsed: list[PromptRow] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            continue
+        prompt = str(row.get(COLUMN_PROMPT, "")).strip()
+        if not prompt:
+            raise ValueError(f"Row {index + 1} has an empty prompt.")
+        label = str(row.get(COLUMN_LABEL, "")).strip() or prompt
+        parsed.append(PromptRow(prompt=prompt, label=label))
+
+    return parsed
+
+
+def _as_sample_filter(context_filter: Any) -> SampleFilter | None:
+    """Reduce the operator's context filter to the sample filter embeddings accept.
+
+    Only the sample filter survives: the media-specific predicates of the grid filters
+    (width, height, fps, duration_s, frame_number) are dropped, so a view narrowed by
+    those alone classifies more samples than it shows.
+    """
+    if isinstance(context_filter, SampleFilter):
+        return context_filter
+    if isinstance(context_filter, (ImageFilter, VideoFrameFilter, VideoFilter)):
+        return context_filter.sample_filter
+    return None
+
+
+def _l2_normalize(matrix: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
+    """L2-normalize row-wise, so a dot product is cosine similarity.
+
+    Stored embeddings are not normalized by every model: some write raw encoder
+    output while others normalize.
+    """
+    norms = np.linalg.norm(matrix, axis=-1, keepdims=True)
+    normalized: NDArray[np.floating[Any]] = matrix / np.maximum(norms, _EPSILON)
+    return normalized
+
+
+def _softmax(scores: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
+    """Softmax over the prompts, shifted by the row max for numerical stability."""
+    exponentials = np.exp(scores - scores.max(axis=-1, keepdims=True))
+    return exponentials / exponentials.sum(axis=-1, keepdims=True)
+
+
+def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
+    label = annotation_label_resolver.get_by_label_name(
+        session=session, dataset_id=dataset_id, label_name=label_name
+    )
+    if label is None:
+        label = annotation_label_resolver.create(
+            session=session,
+            label=AnnotationLabelCreate(
+                dataset_id=dataset_id, annotation_label_name=label_name
+            ),
+        )
+    return label.annotation_label_id
