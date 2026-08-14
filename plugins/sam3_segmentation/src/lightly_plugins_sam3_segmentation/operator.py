@@ -58,65 +58,6 @@ class PromptRow(NamedTuple):
     label: str
 
 
-def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
-    """Read the prompt table, which reaches the operator unvalidated."""
-    if not isinstance(rows, list):
-        return []
-
-    parsed: list[PromptRow] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        prompt = str(row.get(COLUMN_PROMPT, "")).strip()
-        if prompt:
-            label = str(row.get(COLUMN_LABEL, "")).strip() or prompt
-            parsed.append(PromptRow(prompt=prompt, label=label))
-
-    return parsed
-
-
-def _select_device() -> str:
-    """Pick the fastest device SAM3 can run on."""
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
-
-
-def _expand_vision_embeds(vision_embeds: Any, batch_size: int) -> Any:
-    """Repeat one image's vision features across `batch_size` prompts.
-
-    SAM3 does not broadcast text features on the text-only path, so the vision and text
-    batch dimensions have to match.
-    """
-    return dataclasses.replace(
-        vision_embeds,
-        fpn_hidden_states=tuple(
-            tensor.expand(batch_size, *tensor.shape[1:])
-            for tensor in vision_embeds.fpn_hidden_states
-        ),
-        fpn_position_encoding=tuple(
-            tensor.expand(batch_size, *tensor.shape[1:])
-            for tensor in vision_embeds.fpn_position_encoding
-        ),
-    )
-
-
-def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
-    label = annotation_label_resolver.get_by_label_name(
-        session=session, dataset_id=dataset_id, label_name=label_name
-    )
-    if label is None:
-        label = annotation_label_resolver.create(
-            session=session,
-            label=AnnotationLabelCreate(
-                dataset_id=dataset_id, annotation_label_name=label_name
-            ),
-        )
-    return label.annotation_label_id
-
-
 @dataclass
 class SAM3SegmentationOperator(BaseOperator):
     """Instance segmentation using SAM3 driven by a table of prompts and labels."""
@@ -386,3 +327,62 @@ class SAM3SegmentationOperator(BaseOperator):
             success=True,
             message=f"Segmentation complete. Created {len(annotation_creates)} annotations.",
         )
+
+
+def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
+    """Read the prompt table, which reaches the operator unvalidated."""
+    if not isinstance(rows, list):
+        return []
+
+    parsed: list[PromptRow] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        prompt = str(row.get(COLUMN_PROMPT, "")).strip()
+        if prompt:
+            label = str(row.get(COLUMN_LABEL, "")).strip() or prompt
+            parsed.append(PromptRow(prompt=prompt, label=label))
+
+    return parsed
+
+
+def _select_device() -> str:
+    """Pick the fastest device SAM3 can run on."""
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _expand_vision_embeds(vision_embeds: Any, batch_size: int) -> Any:
+    """Repeat one image's vision features across `batch_size` prompts.
+
+    SAM3 does not broadcast text features on the text-only path, so the vision and text
+    batch dimensions have to match.
+    """
+    return dataclasses.replace(
+        vision_embeds,
+        fpn_hidden_states=tuple(
+            tensor.expand(batch_size, *tensor.shape[1:])
+            for tensor in vision_embeds.fpn_hidden_states
+        ),
+        fpn_position_encoding=tuple(
+            tensor.expand(batch_size, *tensor.shape[1:])
+            for tensor in vision_embeds.fpn_position_encoding
+        ),
+    )
+
+
+def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:
+    label = annotation_label_resolver.get_by_label_name(
+        session=session, dataset_id=dataset_id, label_name=label_name
+    )
+    if label is None:
+        label = annotation_label_resolver.create(
+            session=session,
+            label=AnnotationLabelCreate(
+                dataset_id=dataset_id, annotation_label_name=label_name
+            ),
+        )
+    return label.annotation_label_id

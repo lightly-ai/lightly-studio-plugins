@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "SAM3 instance segmentation plugin for Lightly Studio"
 requires-python = ">=3.10"
 dependencies = [
-    "lightly_studio>=1.0.4",
+    "lightly_studio>=1.0.5",
     "torch",
     # For why to avoid transformers 5.10, see
     # https://github.com/huggingface/transformers/issues/46402
