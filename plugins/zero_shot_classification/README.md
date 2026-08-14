@@ -10,6 +10,8 @@ The plugin runs on image, video, and video frame collections.
 
 ### 1. Install the plugin
 
+The plugin needs Lightly Studio 1.0.5 or later.
+
 ```bash
 uv pip install "git+https://github.com/lightly-ai/lightly-studio-plugins.git#subdirectory=plugins/zero_shot_classification/"
 ```

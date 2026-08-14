@@ -309,7 +309,10 @@ def _l2_normalize(matrix: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]
 def _softmax(scores: NDArray[np.floating[Any]]) -> NDArray[np.floating[Any]]:
     """Softmax over the prompts, shifted by the row max for numerical stability."""
     exponentials = np.exp(scores - scores.max(axis=-1, keepdims=True))
-    return exponentials / exponentials.sum(axis=-1, keepdims=True)
+    normalized: NDArray[np.floating[Any]] = exponentials / exponentials.sum(
+        axis=-1, keepdims=True
+    )
+    return normalized
 
 
 def _get_or_create_label(session: Session, dataset_id: UUID, label_name: str) -> UUID:

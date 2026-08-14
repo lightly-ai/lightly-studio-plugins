@@ -1,10 +1,11 @@
 [project]
 name = "lightly_plugins_zero_shot_classification"
 version = "0.1.0"
-description = "Zero-shot image classification operator for Lightly Studio"
+description = "Zero-shot classification operator for Lightly Studio"
 requires-python = ">=3.9"
 dependencies = [
-    "lightly_studio>=1.0.4",
+    # TableParameter is not in 1.0.4.
+    "lightly_studio>=1.0.5",
     "numpy",
     "sqlmodel",
 ]
