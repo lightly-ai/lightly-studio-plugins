@@ -29,8 +29,8 @@ The collection must be embedded before the plugin can classify it, which Lightly
 
 | Column | Required | Description |
 |---|---|---|
-| `prompt` | yes | Text prompt, e.g. `"a photo of a dog"`. A row with an empty prompt is an error, not a skipped row |
-| `label` | no | Label to assign when this prompt scores highest. Defaults to the prompt itself |
+| `prompt` | yes | Text prompt, e.g. `"a photo of a dog"`. A row with an empty prompt is an error, not a skipped row. |
+| `label` | no | Label to assign when this prompt scores highest. Defaults to the prompt itself. |
 
 Add and remove rows in the GUI to define your classes. Prompt wording matters — `"a photo of a dog"` typically works better than a bare `"dog"`.
 
