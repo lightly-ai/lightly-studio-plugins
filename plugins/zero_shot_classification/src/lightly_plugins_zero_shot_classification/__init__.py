@@ -1,1 +1,1 @@
-"""Zero-shot image classification plugin for Lightly Studio."""
+"""Zero-shot classification plugin for Lightly Studio."""
