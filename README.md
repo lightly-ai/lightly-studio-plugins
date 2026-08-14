@@ -80,21 +80,21 @@ Each plugin entry below includes the exact copy-paste install command. After ins
   </details>
 
 - [Zero-Shot Classification](plugins/zero_shot_classification/)  
-  Classifies images against a table of text prompts and the labels to assign, with no training.
+  Classifies samples against a table of text prompts and the labels to assign, with no training.
 
   <details>
   <summary>Details</summary>
 
   You define the class vocabulary in the GUI as rows of `prompt` and `label`, so
-  the label set is not fixed by a trained model. Each image is scored against
+  the label set is not fixed by a trained model. Each sample is scored against
   every prompt and receives the label of the best match.
 
   Scoring reuses the embeddings Lightly Studio already computed for the
-  collection, so no vision model is loaded and no image is read from disk.
+  collection, so no vision model is loaded and no media is read from disk.
 
-  - Scope: single image or images in the current view
+  - Scope: images, videos, or video frames in the current view
   - Input: table of text prompts and the label each prompt assigns
-  - Output: classification annotations, at most one per image
+  - Output: classification annotations, at most one per sample
   - Labels: taken from the `label` column, defaulting to the prompt text, and
     created in the dataset if they do not exist yet
   - Requires: the collection to be embedded, which Lightly Studio does on ingest
