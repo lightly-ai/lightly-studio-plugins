@@ -1,0 +1,30 @@
+[project]
+name = "lightly_plugins_yoloe_object_detection"
+version = "0.1.0"
+description = "YOLOE inference for open vocabulary object detection and instance segmentation"
+requires-python = ">=3.9"
+dependencies = [
+    "lightly_studio>=1.0.4",
+    "sqlmodel",
+    "ultralytics",
+    "numpy",
+    "labelformat",
+    # Text prompting needs the CLIP text encoder. Ultralytics installs this fork at runtime
+    # when it is missing, which fails in offline or read-only environments, so pin it here.
+    # The `clip` package on PyPI is an unrelated project and is not what YOLOE uses.
+    "clip @ git+https://github.com/ultralytics/CLIP.git",
+]
+
+[project.entry-points."lightly_studio.plugins"]
+yoloe_object_detection = "lightly_plugins_yoloe_object_detection.operator:YoloEObjectDetectionOperator"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Required for the `clip` dependency, which is a direct git reference.
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lightly_plugins_yoloe_object_detection"]
