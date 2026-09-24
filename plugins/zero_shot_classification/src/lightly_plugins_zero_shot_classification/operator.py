@@ -8,10 +8,7 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 import numpy as np
-from lightly_studio.dataset.embedding_manager import (
-    EmbeddingManagerProvider,
-    TextEmbedQuery,
-)
+from lightly_studio.embed import embed_samples
 from lightly_studio.models.annotation.annotation_base import (
     AnnotationCreate,
     AnnotationType,
@@ -27,6 +24,7 @@ from lightly_studio.plugins.parameter import (
 from lightly_studio.resolvers import (
     annotation_label_resolver,
     annotation_resolver,
+    collection_embedding_model_resolver,
     collection_resolver,
     sample_embedding_resolver,
 )
@@ -151,10 +149,10 @@ class ZeroShotClassificationOperator(BaseOperator):
         if collection is None:
             return OperatorResult(success=False, message="Collection not found.")
 
-        # Registers the collection's default model, which `embed_text` then requires.
-        embedding_manager = EmbeddingManagerProvider.get_embedding_manager()
-        embedding_model_id = embedding_manager.load_or_get_default_model(
-            session=session, collection_id=context.collection_id
+        embedding_model_id = (
+            collection_embedding_model_resolver.get_default_by_collection_id(
+                session=session, collection_id=context.collection_id
+            )
         )
         if embedding_model_id is None:
             return OperatorResult(
@@ -182,12 +180,10 @@ class ZeroShotClassificationOperator(BaseOperator):
                 np.stack(
                     [
                         np.asarray(
-                            embedding_manager.embed_text(
+                            embed_samples.embed_text_for_collection(
+                                session=session,
                                 collection_id=context.collection_id,
-                                text_query=TextEmbedQuery(
-                                    text=row.prompt,
-                                    embedding_model_id=embedding_model_id,
-                                ),
+                                text=row.prompt,
                             ),
                             dtype=np.float32,
                         )
