@@ -43,21 +43,49 @@ def prepare_segmentation_entries(
     Returns:
         List of dicts with keys 'box' (x, y, w, h), 'score' (float), and 'rle'
         (list[int] row-wise run-length encoding, None when `include_rle` is False).
+        When `include_rle` is True, the box is the tight box around the mask, and
+        detections with an empty mask are skipped.
     """
     img_w, img_h = image_size
     entries = []
     for box, mask, score in zip(boxes, masks, scores):
-        x, y, w, h = _clamp_xyxy_to_xywh(box, img_w, img_h)
-        rle: list[int] | None = None
-        if include_rle:
-            binary_mask: NDArray[np.int_] = mask.cpu().numpy().astype(np.int_)
-            bounding_box = BoundingBox(
-                xmin=float(x),
-                ymin=float(y),
-                xmax=float(x + w),
-                ymax=float(y + h),
+        if not include_rle:
+            # SAM3 predicts the box and the mask with separate heads, so they
+            # do not always agree. Without a mask, the predicted box is used.
+            entries.append(
+                {
+                    "box": _clamp_xyxy_to_xywh(box, img_w, img_h),
+                    "score": float(score),
+                    "rle": None,
+                }
             )
-            seg = BinaryMaskSegmentation.from_binary_mask(binary_mask, bounding_box)
-            rle = seg.get_rle()
-        entries.append({"box": (x, y, w, h), "score": float(score), "rle": rle})
+            continue
+
+        binary_mask: NDArray[np.int_] = mask.cpu().numpy().astype(np.int_)
+        mask_box = _mask_to_xywh(binary_mask=binary_mask)
+        if mask_box is None:
+            continue
+        x, y, w, h = mask_box
+        bounding_box = BoundingBox(
+            xmin=float(x),
+            ymin=float(y),
+            xmax=float(x + w),
+            ymax=float(y + h),
+        )
+        seg = BinaryMaskSegmentation.from_binary_mask(binary_mask, bounding_box)
+        entries.append({"box": mask_box, "score": float(score), "rle": seg.get_rle()})
     return entries
+
+
+def _mask_to_xywh(binary_mask: NDArray[np.int_]) -> tuple[int, int, int, int] | None:
+    """Get the tight (x, y, w, h) box around the non-zero pixels of a mask.
+
+    Returns:
+        The box, or None if the mask has no non-zero pixels.
+    """
+    ys, xs = np.nonzero(binary_mask)
+    if len(xs) == 0:
+        return None
+    x = int(xs.min())
+    y = int(ys.min())
+    return x, y, int(xs.max()) - x + 1, int(ys.max()) - y + 1
