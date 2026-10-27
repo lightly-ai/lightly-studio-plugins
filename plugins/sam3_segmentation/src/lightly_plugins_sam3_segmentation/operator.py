@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 from uuid import UUID
 
+import cv2
 import PIL.Image
 import torch
 from lightly_studio.models.annotation.annotation_base import (
@@ -15,6 +17,8 @@ from lightly_studio.models.annotation.annotation_base import (
     AnnotationType,
 )
 from lightly_studio.models.annotation_label import AnnotationLabelCreate
+from lightly_studio.models.collection import SampleType
+from lightly_studio.models.video import VideoFrameTable
 from lightly_studio.plugins.base_operator import BaseOperator, OperatorResult
 from lightly_studio.plugins.operator_context import ExecutionContext, OperatorScope
 from lightly_studio.plugins.parameter import (
@@ -29,9 +33,13 @@ from lightly_studio.resolvers import (
     annotation_resolver,
     collection_resolver,
     image_resolver,
+    video_frame_resolver,
 )
 from lightly_studio.resolvers.image_filter import ImageFilter
 from lightly_studio.resolvers.sample_resolver.sample_filter import SampleFilter
+from lightly_studio.resolvers.video_frame_resolver.video_frame_filter import (
+    VideoFrameFilter,
+)
 from sqlmodel import Session
 from transformers import Sam3Model, Sam3Processor
 
@@ -49,6 +57,14 @@ PARAM_COLLECTION_NAME = "collection_name"
 
 COLUMN_PROMPT = "prompt"
 COLUMN_LABEL = "label"
+
+# OpenCV ignores rotation metadata, so frames are rotated as lightly_studio displays them.
+_ROTATION_MAP: dict[int, int | None] = {
+    0: None,
+    90: cv2.ROTATE_90_COUNTERCLOCKWISE,
+    180: cv2.ROTATE_180,
+    270: cv2.ROTATE_90_CLOCKWISE,
+}
 
 
 class PromptRow(NamedTuple):
@@ -126,7 +142,7 @@ class SAM3SegmentationOperator(BaseOperator):
 
     @property
     def supported_scopes(self) -> list[OperatorScope]:
-        return [OperatorScope.IMAGE]
+        return [OperatorScope.IMAGE, OperatorScope.VIDEO_FRAME]
 
     def _load_model(self, model_id: str, device: str) -> None:
         if (
@@ -236,18 +252,43 @@ class SAM3SegmentationOperator(BaseOperator):
         if collection is None:
             return OperatorResult(success=False, message="Collection not found.")
 
-        context_filter: ImageFilter | None = None
-        if isinstance(context.context_filter, SampleFilter):
-            context_filter = ImageFilter(sample_filter=context.context_filter)
-        elif isinstance(context.context_filter, ImageFilter):
-            context_filter = context.context_filter
+        sample_images: Iterator[tuple[UUID, PIL.Image.Image | None]]
+        if collection.sample_type == SampleType.VIDEO_FRAME:
+            frame_filter: VideoFrameFilter | None = None
+            if isinstance(context.context_filter, SampleFilter):
+                frame_filter = VideoFrameFilter(sample_filter=context.context_filter)
+            elif isinstance(context.context_filter, VideoFrameFilter):
+                frame_filter = context.context_filter
 
-        result = image_resolver.get_all_by_collection_id(
-            session=session, collection_id=context.collection_id, filters=context_filter
-        )
+            frames = list(
+                video_frame_resolver.get_all_by_collection_id(
+                    session=session,
+                    collection_id=context.collection_id,
+                    video_frame_filter=frame_filter,
+                ).samples
+            )
+            sample_count = len(frames)
+            sample_images = _read_video_frames(frames)
+        else:
+            image_filter: ImageFilter | None = None
+            if isinstance(context.context_filter, SampleFilter):
+                image_filter = ImageFilter(sample_filter=context.context_filter)
+            elif isinstance(context.context_filter, ImageFilter):
+                image_filter = context.context_filter
 
-        samples = list(result.samples)
-        if not samples:
+            images = list(
+                image_resolver.get_all_by_collection_id(
+                    session=session,
+                    collection_id=context.collection_id,
+                    filters=image_filter,
+                ).samples
+            )
+            sample_count = len(images)
+            sample_images = (
+                (image.sample_id, _open_image(image.file_path_abs)) for image in images
+            )
+
+        if sample_count == 0:
             return OperatorResult(
                 success=True,
                 message="No samples found for current view.",
@@ -258,29 +299,25 @@ class SAM3SegmentationOperator(BaseOperator):
         except Exception as exc:
             return self._build_runtime_error_result(exc)
 
-        detections: list[tuple[Any, str, dict[str, Any]]] = []
-        for sample in samples:
-            try:
-                with PIL.Image.open(sample.file_path_abs) as opened_image:
-                    image = opened_image.convert("RGB")
-            except Exception:
-                logger.warning(
-                    "Could not open image: %s — skipping.", sample.file_path_abs
-                )
+        detections: list[tuple[UUID, str, dict[str, Any]]] = []
+        for sample_id, image in sample_images:
+            if image is None:
                 continue
 
             try:
                 image_detections = self._segment_image(
                     image=image,
                     prompt_rows=prompt_rows,
-                    image_size=(sample.width, sample.height),
+                    image_size=image.size,
                     confidence_threshold=confidence_threshold,
                     include_rle=not bounding_boxes_only,
                 )
             except Exception as exc:
                 return self._build_runtime_error_result(exc)
 
-            detections += [(sample, label, entry) for label, entry in image_detections]
+            detections += [
+                (sample_id, label, entry) for label, entry in image_detections
+            ]
 
         if not detections:
             return OperatorResult(
@@ -304,13 +341,13 @@ class SAM3SegmentationOperator(BaseOperator):
         )
 
         annotation_creates: list[AnnotationCreate] = []
-        for sample, label, entry in detections:
+        for sample_id, label, entry in detections:
             x, y, w, h = entry["box"]
             annotation_creates.append(
                 AnnotationCreate(
                     annotation_label_id=label_ids[label],
                     annotation_type=annotation_type,
-                    parent_sample_id=sample.sample_id,
+                    parent_sample_id=sample_id,
                     confidence=entry["score"],
                     x=x,
                     y=y,
@@ -353,6 +390,53 @@ def _parse_prompt_rows(rows: Any) -> list[PromptRow]:
         parsed.append(PromptRow(prompt=prompt, label=label))
 
     return parsed
+
+
+def _open_image(path: str) -> PIL.Image.Image | None:
+    try:
+        with PIL.Image.open(path) as opened_image:
+            return opened_image.convert("RGB")
+    except Exception:
+        logger.warning("Could not open image: %s — skipping.", path)
+        return None
+
+
+def _read_video_frames(
+    frames: Sequence[VideoFrameTable],
+) -> Iterator[tuple[UUID, PIL.Image.Image | None]]:
+    """Decode frames as RGB images, keeping one capture open per video.
+
+    Relies on the frames being grouped by video, as the frame resolver returns them.
+    """
+    capture: cv2.VideoCapture | None = None
+    capture_path = ""
+    try:
+        for frame in frames:
+            if capture is None or capture_path != frame.video.file_path_abs:
+                if capture is not None:
+                    capture.release()
+                capture_path = frame.video.file_path_abs
+                capture = cv2.VideoCapture(capture_path)
+
+            capture.set(cv2.CAP_PROP_POS_FRAMES, frame.frame_number)
+            ok, bgr = capture.read()
+            if not ok:
+                logger.warning(
+                    "Could not read frame %d of %s — skipping.",
+                    frame.frame_number,
+                    capture_path,
+                )
+                yield frame.sample_id, None
+                continue
+
+            rotate_code = _ROTATION_MAP.get(frame.rotation_deg)
+            if rotate_code is not None:
+                bgr = cv2.rotate(bgr, rotate_code)
+            rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            yield frame.sample_id, PIL.Image.fromarray(rgb)
+    finally:
+        if capture is not None:
+            capture.release()
 
 
 def _select_device() -> str:
