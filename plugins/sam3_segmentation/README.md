@@ -1,6 +1,6 @@
 # SAM3 Plugin
 
-Automatic instance segmentation using [SAM3](https://huggingface.co/facebook/sam3) with a table of text prompts. Runs on image collections in Lightly Studio.
+Automatic instance segmentation using [SAM3](https://huggingface.co/facebook/sam3) with a table of text prompts. Runs on image and video frame collections in Lightly Studio.
 
 ## Setup
 
